@@ -5,7 +5,7 @@ A collection of Claude Code skills.
 ## Installation
 
 ```bash
-npx skills add YiftachCohen/skills
+npx skills add YiftachCohen/skills --skill ruflo-orchestrator
 ```
 
 ## Available Skills
