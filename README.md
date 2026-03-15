@@ -2,6 +2,12 @@
 
 A collection of Claude Code skills.
 
+## Installation
+
+```bash
+npx skills add YiftachCohen/skills
+```
+
 ## Available Skills
 
 | Skill | Description |

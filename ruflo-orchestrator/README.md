@@ -18,10 +18,8 @@ It covers all 16 Ruflo agent types across 4 categories (core, specialized, swarm
 ## Installation
 
 ```bash
-claude skill add YiftachCohen/skills --skill ruflo-orchestrator
+npx skills add YiftachCohen/skills
 ```
-
-Or manually copy `SKILL.md` to `~/.claude/skills/ruflo-orchestrator/SKILL.md`.
 
 ## Prerequisites
 
