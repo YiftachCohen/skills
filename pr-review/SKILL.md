@@ -58,11 +58,11 @@ The guiding principle (from Google's code-review standard): **approve once the c
 
 Every comment gets a severity so the user (and the PR author) knows what actually blocks merge. This is the single most useful thing you provide — it turns a wall of feedback into a clear "fix these two, the rest is optional."
 
-- **🔴 Blocking** — must be addressed before merge. Bugs, security holes, missing tests for critical paths, breaking changes.
-- **🟡 Non-blocking** — worth addressing but the author can reasonably decide. Design suggestions, better approaches, missing edge-case handling that's unlikely.
+- **🔴 Blocking** — must be addressed before merge. Reserve this for real *impact*: security holes, data corruption/loss, wrong results on inputs the code will actually see, crashes on a realistic path, breaking changes, or a missing test for one of those. The question isn't "is this a bug?" — it's "would I genuinely hold up the merge over this?"
+- **🟡 Non-blocking** — worth addressing but the author can reasonably decide. Design suggestions, better approaches, and — importantly — **real-but-minor bugs**: a cosmetic glitch, an edge case that's unlikely or low-impact, an imperfect-but-acceptable output. Flag it (it's a real finding), just don't gate the merge on it.
 - **🟢 Nit** — trivial/style/preference. Explicitly optional. Author can ignore freely.
 
-When unsure, err toward non-blocking — over-blocking erodes trust and slows the team down.
+When unsure, err toward non-blocking — over-blocking erodes trust and slows the team down. A finding being *real* doesn't make it blocking; blocking is about consequence. For example: a `slugify()` that leaves a trailing hyphen on weird input is a genuine bug, but it's cosmetic and rare — that's `(non-blocking)`, not a merge-stopper. A `median()` that returns the wrong number for any even-length list is also a bug, but it silently produces wrong results on ordinary input — that one blocks. Calibrate to the blast radius, not to whether you found something.
 
 ### 5. Write the comments using Conventional Comments
 
