@@ -91,6 +91,32 @@ Examples:
 - `nitpick (non-blocking): \`data2\` doesn't say what it holds — maybe \`normalizedRows\`?`
 - `praise: nice — pulling this into \`withRetry\` makes the call sites much cleaner.`
 
+### Sound like a real teammate, not a bot
+
+These comments go out under the user's name to a colleague they work with. They have to read like the user dropped a quick note on the PR — not like a generated report. This is the difference between feedback a teammate trusts and feedback that feels like it came from a linter with a thesaurus. Write the way an experienced engineer actually types in a review box:
+
+- **Short. Like, actually short.** Most real review comments are one or two sentences. Say the thing and stop. If you're explaining for a third sentence, you're probably over-explaining something the author already knows.
+- **Use contractions and plain words.** "this'll break", "I'd pull this out", "can we", "looks like", "wdyt". Not "this will break", "I would recommend extracting", "it would be advisable to".
+- **Cut the throat-clearing.** Delete openers like "I noticed that", "It's worth noting that", "One thing to consider is", "Great job on this, however". Just lead with the point.
+- **No corporate cheerfulness.** Praise sounds like a person reacting, not an HR review: "oh nice, this is way cleaner" — not "Excellent work on this refactor!". Keep it specific and offhand.
+- **Drop the AI tells.** No "Additionally / Moreover / Furthermore", no restating the code back ("This function takes an id and..."), no symmetrical three-part sentences, no em-dash-everywhere cadence, no summarizing what you just said.
+- **Vary the shape.** Real reviewers don't format every comment identically. Some are a fragment ("leftover console.log?"), some a question, some a quick suggestion. Don't make them all the same length and rhythm.
+- **It's fine to be casual and direct.** Lowercase nits, a "hmm", a "tbh", a trailing "?" on a soft suggestion — that's how people actually write. You're a peer, not an auditor.
+
+The Conventional Comments label does the heavy lifting of signaling intent, so the *prose* after the label can be loose and human. Lean on that.
+
+**AI-sounding → human:**
+- ❌ `issue (blocking): It appears that this function does not handle the case where the input array is empty, which could lead to a runtime exception.`
+  ✅ `issue (blocking): this NPEs on an empty \`users\` — needs a guard up top.`
+- ❌ `suggestion (non-blocking): I would recommend considering the extraction of this logic into a separate helper function to improve readability and reduce duplication.`
+  ✅ `suggestion (non-blocking): we've got this same block in \`importUsers\` — pull it into a helper?`
+- ❌ `praise: Excellent work! This is a very clean and well-structured implementation that demonstrates good engineering practices.`
+  ✅ `praise: this is so much nicer than the old version, thank you`
+- ❌ `question: I am curious as to whether the retry behavior implemented here is intended to be unbounded in nature.`
+  ✅ `question: is this retry meant to be unbounded? feels like it could spin forever if the service stays down`
+
+One caveat: if the user has given you samples of their own review comments or a house style, match *that* over these defaults — the goal is to sound like them specifically.
+
 ## Output format
 
 Produce exactly this structure. The whole point is paste-ability, so keep each comment body self-contained and put it in its own fenced block the user can copy in one go.
