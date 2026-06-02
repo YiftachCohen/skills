@@ -1,0 +1,20 @@
+# On-device image redaction dependencies.
+# Everything here runs locally — no network calls are made at redaction time.
+
+# --- Required (core pipeline) ---
+Pillow>=10.0          # image loading / drawing / blur / pixelate
+pytesseract>=0.3.10   # Python wrapper around the Tesseract OCR engine
+                      # NOTE: also install the engine itself (not a pip package):
+                      #   Debian/Ubuntu : apt-get install tesseract-ocr
+                      #   macOS         : brew install tesseract
+                      #   Windows       : choco install tesseract
+
+# --- Strongly recommended (much better detection: names, locations, etc.) ---
+# Without these the script falls back to regex-only detection, which CANNOT
+# find PERSON / LOCATION names. Install both, then download the spaCy model:
+#   python -m spacy download en_core_web_lg
+presidio-analyzer>=2.2
+spacy>=3.7
+
+# --- Optional (face redaction via --faces) ---
+opencv-python>=4.8

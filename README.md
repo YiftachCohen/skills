@@ -6,6 +6,7 @@ A collection of Claude Code skills.
 
 ```bash
 npx skills add YiftachCohen/skills --skill ruflo-orchestrator
+npx skills add YiftachCohen/skills --skill redact-image
 ```
 
 ## Available Skills
@@ -13,3 +14,4 @@ npx skills add YiftachCohen/skills --skill ruflo-orchestrator
 | Skill | Description |
 |---|---|
 | [ruflo-orchestrator](./ruflo-orchestrator) | Orchestrate multi-agent AI swarms using Ruflo's MCP tools |
+| [redact-image](./redact-image) | Redact sensitive data from images on-device before the agent reads them |
