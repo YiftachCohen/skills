@@ -1,0 +1,4 @@
+
+# skill-creator eval workspaces (local scaffolding, not part of the installable skills)
+pr-review-workspace/
+*-workspace/
