@@ -34,6 +34,8 @@ Read the PR description and any linked issue first. A change is only "correct" r
 
 Then read the diff **in context**, not as isolated lines. When a hunk calls a function or touches an interface, look at the surrounding code (read the file, or the rest of the function) so you understand the blast radius. The most valuable review comments come from understanding the code around the change, which the diff alone doesn't show.
 
+This understanding isn't just for you — write it up at the top of the output (the "What this PR does" section below). Stating your read of the change does two things: it lets the author catch it fast if you misunderstood something (which means your comments are aimed at the wrong target), and it gives anyone skimming the PR a plain-language map of the change. Base it on what the code *actually does*, not just what the description claims — sometimes they diverge, and that gap is itself worth a comment.
+
 ### 3. Review across these dimensions
 
 Don't just hunt for syntax issues — that's what linters are for. Reviewers add value on judgment. Walk the diff with these lenses, roughly in priority order. `references/review-checklist.md` has the detailed prompts for each; read it if you want the full set.
@@ -124,8 +126,22 @@ Produce exactly this structure. The whole point is paste-ability, so keep each c
 ````markdown
 # PR Review: <PR title>
 
+## 🔍 What this PR does
+
+<2-5 sentences explaining the change for a fellow engineer: what problem it
+solves or goal it serves, the approach it takes, and the main files/components
+it touches. Describe what the code actually does, and flag it here if that
+diverges from what the description claims.>
+
+**🧒 ELI10:** <2-3 sentences explaining the same thing like you're talking to a
+smart 10-year-old. Use a plain-language analogy, zero jargon (no "API",
+"async", "query" — say what those mean in kid terms). The test: someone who's
+never seen this codebase should get the gist of why this change exists.>
+
+---
+
 **Recommendation:** ✅ Approve / 💬 Comment / 🔴 Request changes
-**Summary:** <2-4 sentences: what the PR does, your overall read, and the headline issues if any.>
+**Summary:** <2-3 sentences: your overall read and the headline issues, if any. This is your verdict — don't just re-describe the PR, that's what the section above is for.>
 
 **Blocking items:** <count> · **Non-blocking:** <count> · **Nits:** <count>
 
@@ -170,6 +186,7 @@ nitpick (non-blocking): <body>
 ````
 
 Rules for the output:
+- **Lead with "What this PR does" + ELI10.** This is context for you and the team, not a finding — keep it accurate and neutral (save opinions for the comments). The ELI10 should genuinely simplify: if a 10-year-old couldn't follow it, it's still too technical. The user can paste this section into the PR as "here's my understanding —" so the author can confirm you read it right, but it's also fine to keep it just for orientation.
 - **Group by severity** (Blocking → Non-blocking → Nits) so the user can paste the important ones first and skip nits if short on time. Omit a section entirely if it's empty.
 - **Each inline comment shows `file:line` and a quoted anchor line** from the diff, so the user can locate exactly where to paste it in the PR's "Files changed" view. Use the line number on the **new** side of the diff (the `+` side) unless commenting on a deleted line. Where it helps, name the enclosing symbol too (e.g. `userService.js:14 — in getUser()`) so the location survives a rebase that shifts line numbers.
 - **The comment body sits alone in a fenced code block** — that's the part that gets copied. Don't put the file/line *inside* the block.
