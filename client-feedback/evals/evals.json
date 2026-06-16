@@ -1,0 +1,26 @@
+{
+  "skill_name": "client-feedback",
+  "evals": [
+    {
+      "id": 0,
+      "name": "bug-category-blocks-submission",
+      "prompt": "I just got this feedback from a user of our scholarship platform (Milgapo). Please analyze it.\n\n----\nהיי, ניסיתי להגיש בקשה למלגה ׳קרן רש״י׳ אבל ברגע שאני בוחר את הקטגוריה השלישית בטופס המערכת מקפיאה את הכפתור של ׳הגש׳ ולא נותן ללחוץ. ניסיתי גם בכרום וגם בספארי, אותו דבר. זה באג. אני מנסה כבר יומיים.\n----\n\nFor the purposes of this run, after you do the Phase 1 translation and restatement, assume I (the user) confirm your read is correct so you can proceed to Phase 2 without waiting for me. Use the codebase in this workspace to verify the premise and produce the full analysis.",
+      "expected_output": "English-language analysis with a Phase 1 translation, an explicit verdict on whether the bug is real (with file:line evidence from the actual codebase), classification, and either a complete root-cause-driven fix (Phase 4a) or an explanation of why the client is wrong with a Hebrew reply.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "feature-dashboard-show-submitted",
+      "prompt": "Got this feedback from a paying user of Milgapo. Please analyze.\n\n----\nתשמעו, אני אוהבת את הדשבורד אבל הוא מראה לי רק מלגות חדשות שעוד לא הגשתי. אני רוצה לראות גם את אלה שכבר הגשתי, אולי בטאב נפרד או משהו, כדי שאדע מה הסטטוס שלהן בלי לחפש כל פעם.\n----\n\nAssume I confirm your Phase 1 read, then proceed to a full Phase 2-5 analysis grounded in this codebase. I want the impact analysis to actually reference the dashboard files.",
+      "expected_output": "English analysis. Premise check should confirm the current dashboard scope by reading actual dashboard files. Classification = feature/change. Phase 4b impact analysis should enumerate UI, i18n, server actions, DB queries, plan-tier gating, and at least one cheaper + one more-ambitious alternative.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "client-is-wrong-expired-coupon",
+      "prompt": "Customer support forwarded this complaint. Please analyze.\n\n----\nהקופון לא עובד!! ניסיתי להזין את הקוד SUMMER24 שלוש פעמים ובכל פעם המערכת אומרת ׳קופון לא תקף׳. שילמתי על מינוי ואני מצפה לקבל הנחה. תתקנו את זה כבר!\n----\n\nContext you can use: assume from the database that coupon SUMMER24 has expires_at = 2024-08-31 and today is 2026-05-08. Other coupons work fine. After Phase 1, assume I confirm your read and proceed.",
+      "expected_output": "English analysis. Verdict = invalid bug; the coupon system is working correctly because the coupon has expired. Classification = UX/communication issue. Phase 4 should propose a UX fix (clearer error message that says expired vs invalid, or showing the expiry date). Phase 5 recommendation = don't do code change for the coupon engine; do a UX/comms fix. Should include a polite Hebrew reply to the client explaining the coupon expired, with English gloss underneath.",
+      "files": []
+    }
+  ]
+}
