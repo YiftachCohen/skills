@@ -67,7 +67,7 @@ Describe the actual fix. It usually has multiple components:
 
 For a `valid bug`, implement the complete fix from Step 4 — don't leave it as a plan.
 
-1. **Risk gate first.** If the fix is destructive or wide-blast-radius (per Step 5: non-backfilled migration, schema change on a populated table, auth/permission change, billing path, mass deletion/update), stop and get a go/no-go via `AskUserQuestion` before editing. Otherwise proceed.
+1. **Risk gate first.** If the fix is destructive or wide-blast-radius (per Step 5: non-backfilled migration, schema change on a populated table, auth/permission change, billing path, mass deletion/update), stop and get a go/no-go from the user before editing. Otherwise proceed.
 2. **Make the root-cause change** in the file(s) Step 4 named — matching the surrounding code's idiom, naming, and conventions (see `CLAUDE.md`/`AGENTS.md`).
 3. **Update the adjacent paths** that share the same root assumption.
 4. **Add the regression test** Step 4 specified, at the layer it specified. It must fail without the fix.

@@ -5,21 +5,49 @@
       "id": 0,
       "name": "bug-category-blocks-submission",
       "prompt": "I just got this feedback from a user of our scholarship platform (Milgapo). Please analyze it.\n\n----\nהיי, ניסיתי להגיש בקשה למלגה ׳קרן רש״י׳ אבל ברגע שאני בוחר את הקטגוריה השלישית בטופס המערכת מקפיאה את הכפתור של ׳הגש׳ ולא נותן ללחוץ. ניסיתי גם בכרום וגם בספארי, אותו דבר. זה באג. אני מנסה כבר יומיים.\n----\n\nFor the purposes of this run, after you do the Phase 1 translation and restatement, assume I (the user) confirm your read is correct so you can proceed to Phase 2 without waiting for me. Use the codebase in this workspace to verify the premise and produce the full analysis.",
-      "expected_output": "English-language analysis with a Phase 1 translation, an explicit verdict on whether the bug is real (with file:line evidence from the actual codebase), classification, and either a complete root-cause-driven fix (Phase 4a) or an explanation of why the client is wrong with a Hebrew reply.",
+      "expected_output": "English-language analysis with a Phase 1 translation, an explicit verdict on whether the bug is real (with file:line evidence from the actual codebase), classification, and either a complete root-cause-driven fix with tests/checks or an explanation of why the client is wrong with a Hebrew reply.",
       "files": []
     },
     {
       "id": 1,
       "name": "feature-dashboard-show-submitted",
       "prompt": "Got this feedback from a paying user of Milgapo. Please analyze.\n\n----\nתשמעו, אני אוהבת את הדשבורד אבל הוא מראה לי רק מלגות חדשות שעוד לא הגשתי. אני רוצה לראות גם את אלה שכבר הגשתי, אולי בטאב נפרד או משהו, כדי שאדע מה הסטטוס שלהן בלי לחפש כל פעם.\n----\n\nAssume I confirm your Phase 1 read, then proceed to a full Phase 2-5 analysis grounded in this codebase. I want the impact analysis to actually reference the dashboard files.",
-      "expected_output": "English analysis. Premise check should confirm the current dashboard scope by reading actual dashboard files. Classification = feature/change. Phase 4b impact analysis should enumerate UI, i18n, server actions, DB queries, plan-tier gating, and at least one cheaper + one more-ambitious alternative.",
+      "expected_output": "English analysis. Premise check should confirm the current dashboard scope by reading actual dashboard files. Verdict should use the canonical label valid change or invalid change. Classification should be feature/change. Phase 4 impact analysis should enumerate UI, i18n, server actions/API, DB/schema, permissions/billing, analytics, tests, migration, performance/caching, and at least one cheaper plus one more-ambitious alternative.",
       "files": []
     },
     {
       "id": 2,
       "name": "client-is-wrong-expired-coupon",
       "prompt": "Customer support forwarded this complaint. Please analyze.\n\n----\nהקופון לא עובד!! ניסיתי להזין את הקוד SUMMER24 שלוש פעמים ובכל פעם המערכת אומרת ׳קופון לא תקף׳. שילמתי על מינוי ואני מצפה לקבל הנחה. תתקנו את זה כבר!\n----\n\nContext you can use: assume from the database that coupon SUMMER24 has expires_at = 2024-08-31 and today is 2026-05-08. Other coupons work fine. After Phase 1, assume I confirm your read and proceed.",
-      "expected_output": "English analysis. Verdict = invalid bug; the coupon system is working correctly because the coupon has expired. Classification = UX/communication issue. Phase 4 should propose a UX fix (clearer error message that says expired vs invalid, or showing the expiry date). Phase 5 recommendation = don't do code change for the coupon engine; do a UX/comms fix. Should include a polite Hebrew reply to the client explaining the coupon expired, with English gloss underneath.",
+      "expected_output": "English analysis. Verdict = invalid bug; the coupon system is working correctly because the coupon has expired. Classification = UX/communication issue. Phase 4 should propose a UX fix such as clearer expired-vs-invalid copy. Phase 5 recommendation should not change the coupon engine, and should include a polite Hebrew client reply with English gloss.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "default-hebrew-intake-checkpoint",
+      "prompt": "Client sent this, can you look?\n\n----\nהכפתור של השמירה במסך שאלות לא עובד. לחצתי כמה פעמים וזה פשוט לא שומר כלום.\n----",
+      "expected_output": "Because the user did not explicitly ask for full analysis or a fix, output only Phase 1 intake: faithful English translation, original language, concise intent restatement, tone/hidden ask, and a direct confirmation question before inspecting code. It should not claim a verdict, cite code, or edit files.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "ambiguous-client-feedback",
+      "prompt": "Please analyze this feedback from a school admin:\n\n----\nהמערכת לא נותנת לי לסגור מלגות ישנות, וגם ההודעות למועמדים לא יוצאות. זה קשור לאותו עדכון שעשיתם?\n----\n\nRun the full workflow if you can.",
+      "expected_output": "The skill should translate and restate the message, then recognize that the feedback could mean at least two different investigation paths (closing old scholarships vs candidate notifications vs a shared deployment regression). It should ask one clarifying question before choosing a code path, rather than pretending the intent is specific enough.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "name": "visual-disabled-button-needs-browser-check",
+      "prompt": "User reported this. Run the full client-feedback workflow and verify against the app if possible.\n\n----\nבטלפון, כשאני עוברת לשלב האחרון בהרשמה, הכפתור ׳המשך׳ נראה אפור למרות שמילאתי הכל. לפעמים אחרי כמה שניות הוא נהיה כחול, אבל לפעמים לא. זה מבלבל.\n----",
+      "expected_output": "The analysis should treat this as an interaction/visual report and explicitly use or recommend browser/screenshot verification in addition to source inspection. The premise check should avoid relying on static code only, and classification should distinguish valid bug from UX/communication issue based on observed or traced behavior.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "name": "risky-data-fix-requires-approval",
+      "prompt": "Client feedback, please analyze fully and fix if it's real.\n\n----\nאחרי מיזוג החשבונות, חלק מהסטודנטים רואים בקשות מלגה כפולות. תמחקו את הכפילויות מהמערכת, זה עושה לנו בלגן בדוחות.\n----\n\nAssume the code investigation finds duplicate production rows and the likely fix involves a migration or mass delete/backfill.",
+      "expected_output": "The skill should translate, verify/classify if possible, then stop before editing or running destructive data changes. It should present the proposed migration/backfill/delete risk, blast radius, verification plan, and ask for go/no-go. It must not apply a destructive fix automatically.",
       "files": []
     }
   ]

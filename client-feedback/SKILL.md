@@ -2,16 +2,17 @@
 name: client-feedback
 description: |
   Analyze client/user feedback (often arriving in Hebrew) and produce a rigorous
-  English-language assessment. Translate intent, critically challenge whether the
-  client is actually correct, classify the report (bug vs feature/change vs
-  misunderstanding), and only then produce either a root-cause-driven fix plan or a
-  full impact analysis with implementation. Do NOT assume the client is right —
-  verifying the premise against real code is the whole point. Use whenever the
-  user pastes client/customer feedback, support tickets, bug reports, feature
-  requests, complaints, or messages from end users — in any language, but
-  especially Hebrew. Trigger phrases include "client says", "user reported",
-  "feedback from", "a customer wrote", "לקוח אמר", "משוב", "תלונה", "בקשה ממשתמש",
-  or any pasted message that reads like an end-user complaint, request, or report.
+  English-language assessment. First translate and restate the intent, then
+  verify whether the client is actually correct before classifying the report as a
+  bug, feature/change, UX issue, misunderstanding, or out-of-scope item. Use this
+  skill whenever the user pastes client/customer feedback, support tickets, bug
+  reports, feature requests, complaints, or messages from end users - in any
+  language, especially Hebrew. Trigger phrases include "client says", "user
+  reported", "feedback from", "a customer wrote", "לקוח אמר", "משוב", "תלונה",
+  "בקשה ממשתמש", or any pasted message that reads like an end-user complaint,
+  request, or report. Do not assume the client is right; the core job is to check
+  the premise against real code, screenshots, data, or product behavior before
+  recommending or implementing anything.
 allowed-tools:
   - Bash
   - Read
@@ -36,45 +37,64 @@ Two failure modes happen when client feedback gets handled casually:
 
 This skill institutionalizes a more rigorous workflow against both failure modes. **Read this whole file before responding.**
 
+## Runtime compatibility
+
+This skill is shared by Claude and Codex. Tool names differ between environments, so map the instructions to the local equivalents:
+
+- Use the available file-read, search, shell, edit, browser, and user-question tools in the current runtime.
+- Prefer fast code search (`rg`/Grep) and direct file reads before broad exploration.
+- If a named tool in this file is unavailable, use the closest safe equivalent and keep the same workflow intent.
+
 ## Autonomy
 
-This skill runs **autonomously by default**. Translate, verify the premise, classify, analyze, and — for valid bugs — **apply the fix** without stopping to ask, as long as you stay confident. The premise check (Phase 2) is what makes this safe: you never code against an unverified claim, so "auto-apply" only ever fires after the code itself has confirmed the bug is real.
+The default mode is **intake checkpoint first**. Translate and restate the client feedback, then pause before code inspection unless the user clearly asked for full analysis or implementation.
 
-Stop and use `AskUserQuestion` in exactly two situations:
+Use **autonomous mode** only when the user says or strongly implies they want the full workflow now, for example: "analyze this", "fix this", "go ahead", "assume my read is correct", "run the full analysis", "proceed", or "don't stop for confirmation". In autonomous mode, translate, verify the premise, classify, analyze, and - for valid bugs - apply the low-risk fix.
 
-1. **Ambiguous intent.** The feedback genuinely supports more than one reading and the choice changes what you'd investigate or build. A confidently-inferred intent is not ambiguous — only pause when you'd otherwise be guessing.
-2. **Risky fix.** The fix is hard to reverse or has wide blast radius — destructive or non-backfilled migrations, schema changes on populated tables, auth/permission changes, money/billing paths, deletions, or anything affecting many existing rows/users. Present the plan and the risk, and get a go/no-go before editing.
+The checkpoint matters because client messages, especially in Hebrew, often contain tone, implied urgency, and ambiguous references. Confirming the read before touching code prevents careful-looking work on the wrong problem.
 
-Everything else: proceed. Don't ask for confirmation of a translation, a classification, or a low-risk fix.
+Stop and ask the user in these situations:
+
+1. **Default intake checkpoint.** After Phase 1, ask whether the translation/restatement is the right read before Phase 2 unless the user already requested autonomous/full analysis.
+2. **Ambiguous intent.** The feedback genuinely supports more than one reading and the choice changes what you'd investigate or build. A confidently inferred intent is not ambiguous - only pause when you'd otherwise be guessing.
+3. **Risky fix.** The fix is hard to reverse or has wide blast radius: destructive or non-backfilled migrations, schema changes on populated tables, auth/permission changes, money/billing paths, deletions, or anything affecting many existing rows/users. Present the plan and the risk, and get a go/no-go before editing.
+4. **User requested report-only.** If the user asks only for analysis, review, or a client reply, do not edit code.
+
+In autonomous mode, do not ask for confirmation of a translation, classification, or low-risk fix. The premise check is what makes that safe: you never code against an unverified claim.
 
 ## Language rules
 
 - **Detect the original language** of the feedback. Record it (e.g. `he`, `en`, `ar`).
 - **Always respond to the user (the developer/operator running the skill) in English.** This is true regardless of input language and matches the project convention in `agent.md` / `CLAUDE.md` files in repos like Milgapo.
-- **Only draft a client-facing reply** when you reach Phase 5 with a recommendation that needs one (typically "client is wrong" / "don't do it"), AND the original feedback was Hebrew → reply in Hebrew with an English gloss; or original was English → reply in English. For other source languages, default to English and flag it for the user.
+- **Draft a client-facing reply** when Phase 5 produces a recommendation the user may need to send onward: a real bug was fixed, the client is wrong, the answer is "don't do it", or more information is needed. If the original feedback was Hebrew, reply in Hebrew with an English gloss; if original was English, reply in English. For other source languages, default to English and flag it for the user.
 
 ## Project awareness
 
-Before Phase 2, briefly check the active project:
+Before Phase 2, briefly orient in the active project. Start at the git root when available:
 
 ```bash
+git rev-parse --show-toplevel 2>/dev/null
+git status --short
 ls agent.md CLAUDE.md AGENTS.md 2>/dev/null
 ```
 
-If any of these exist, read the most relevant one. It'll tell you the stack, conventions, and where things live — that's what you'll need for the premise check and root-cause work. If none exist, fall back to `git ls-files | head -50` and `package.json` / `Cargo.toml` / equivalent to orient yourself.
+Check both the repo root and current directory for `agent.md`, `CLAUDE.md`, or `AGENTS.md`, then read the most relevant one. It will tell you the stack, conventions, and validation commands. If none exist, fall back to `git ls-files | head -50` and `package.json` / `Cargo.toml` / equivalent to orient yourself.
+
+Treat `git status --short` as part of the safety check before edits. If there are unrelated user changes, do not revert them; work around them or ask if they block the fix.
 
 ## The five phases
 
 ### Phase 1 — Translate and restate
 
-No hard stop. Translate, restate, and keep moving — unless the intent is genuinely ambiguous (see **Autonomy** above), in which case `AskUserQuestion` once, then continue.
+Translate and restate before doing anything else.
 
 1. If the feedback is not in English, produce a faithful English translation. Preserve nuance — angry/frustrated tone matters; "this is the third time" is a different signal than "fyi".
 2. Restate the client's request in **one or two sentences** in English: "the client believes X is broken / wants Y to behave differently / is asking whether Z is possible". Don't editorialize yet.
 3. Note tone and any hidden ask — escalation language, churn risk, deadline pressure.
 4. **Decide: is the intent clear enough to act on?**
-   - If yes (the usual case): write the translation + restatement into your output and proceed directly to Phase 2. No confirmation needed.
-   - If the feedback genuinely supports more than one reading *and* the readings would lead you to investigate or build different things: use `AskUserQuestion` once — "Which did the client mean?" with the candidate readings as options — then proceed with the chosen one. Don't ask just to be polite; only when you'd otherwise be guessing.
+   - If the user did not explicitly request autonomous/full analysis: stop here and ask whether this is the right read before inspecting code.
+   - If the user did request autonomous/full analysis and the intent is clear: keep moving directly to Phase 2.
+   - If the feedback genuinely supports more than one reading *and* the readings would lead you to investigate or build different things: ask once - "Which did the client mean?" with the candidate readings as options - then proceed with the chosen one. Don't ask just to be polite; only when you'd otherwise be guessing.
 
 ### Phase 2 — Verify the premise (the critical step)
 
@@ -82,8 +102,9 @@ No hard stop. Translate, restate, and keep moving — unless the intent is genui
 
 Before classifying or proposing anything, decide: **is the client actually right?**
 
-- Open the relevant code paths in the active repo using Read/Grep. Trace the behavior the client describes — does the code actually do what they say it does?
+- Open the relevant code paths in the active repo using the local read/search tools. Trace the behavior the client describes — does the code actually do what they say it does?
 - Reproduce the claim mentally from the code. If the client says "X breaks when I do Y", find the handler/action/component for Y and walk through what happens.
+- If the report is visual or interaction-heavy (loading state, disabled button, navigation, layout, transition, mobile/RTL behavior), verify the behavior with browser/screenshot tools when available. Code inspection alone often misses transient UX bugs.
 - Check for these common false-positive patterns explicitly:
   - **Intended behavior.** The client describes a deliberate design decision (e.g. "the system won't let me apply twice") as a bug.
   - **Misconfiguration.** The "bug" only happens because of a setting/permission/role/plan-tier the client (or their account) is on.
@@ -96,8 +117,8 @@ Before classifying or proposing anything, decide: **is the client actually right
 Output a verdict from this set:
 - `valid bug` — the code does behave wrongly, the client correctly identified it.
 - `invalid bug` — the code is fine; this is intended behavior, misconfiguration, stale state, or pilot error. (May still be a UX issue worth solving differently.)
-- `valid change request` — the request makes sense; current behavior could be better.
-- `invalid change request` — the request conflicts with the product's direction, with another feature, or would break more than it would fix.
+- `valid change` — the request makes sense; current behavior could be better.
+- `invalid change` — the request conflicts with the product's direction, with another feature, or would break more than it would fix.
 - `needs more info` — the premise can't be checked from what's available; specify exactly what info is missing.
 
 Always cite `file:line` or specific function names when justifying the verdict. "Looks fine" is not enough.
@@ -128,7 +149,7 @@ For a `valid bug`, don't stop at a plan — **implement the complete fix** from 
 
 - Make the root-cause change, update adjacent paths, and add the regression test the analysis names.
 - Run the project's checks if cheap and available (typecheck, the single relevant test file — see `CLAUDE.md`/`AGENTS.md` for commands). Report the result honestly; if a check fails, say so with the output rather than papering over it.
-- **Before editing, apply the risk gate** from **Autonomy**: if the fix is destructive / wide-blast-radius, present the plan + risk via `AskUserQuestion` and get a go/no-go first. Otherwise just do it.
+- **Before editing, apply the risk gate** from **Autonomy**: if the fix is destructive / wide-blast-radius, present the plan + risk and get a go/no-go first. Otherwise just do it.
 - For change/feature requests, default to producing the implementation plan and only writing code when the change is small and low-risk; for anything larger, leave it as a plan unless told otherwise.
 
 ### Phase 5 — Recommendation
@@ -145,6 +166,8 @@ If the recommendation is "Don't do it" or "client is wrong":
 - If `original_language == 'en'`: draft the reply in English.
 - Other languages: draft in English and flag it for the user to translate.
 
+If the recommendation is "Done" for a valid bug and the original feedback came from a client, include a brief client-facing reply that thanks them, acknowledges the issue, and says it was fixed or is ready to verify. Do not over-share internal implementation details.
+
 ## Required output format
 
 Produce the analysis using exactly this template:
@@ -160,7 +183,7 @@ Produce the analysis using exactly this template:
 <one or two sentences restating what the client wants>
 
 ## Premise check
-**Verdict:** valid bug | invalid bug | valid change | invalid change | needs info
+**Verdict:** valid bug | invalid bug | valid change | invalid change | needs more info
 **Reasoning:** <why — with file:line references where relevant>
 
 ## Classification
@@ -177,7 +200,7 @@ Produce the analysis using exactly this template:
  (plan-only, invalid, out-of-scope, or a risky fix awaiting go/no-go).>
 
 ## Recommendation
-<one paragraph: done / do / don't / narrower / need-info>
+<one paragraph: done / do / don't / narrower / need-more-info>
 
 <If applicable — Hebrew or English client reply with gloss>
 ```

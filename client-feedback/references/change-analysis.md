@@ -20,15 +20,15 @@ Force yourself to write the change as **before/after behavior**, not as "add a f
 Walk every layer. For each, write either the impact or "none" — don't skip.
 
 - **UI / pages affected.** Which routes, which components? Empty states, loading states, error states all need consideration.
-- **i18n / strings.** New keys needed? Hebrew + English? RTL implications? (Houston: `lib/i18n/locales/he.ts`.)
+- **i18n / strings.** New keys needed? Which locale files? Hebrew + English? RTL implications?
 - **Server actions / API routes.** Which actions need new params, new return shapes? Backwards compatibility for in-flight callers?
 - **Domain services.** Logic that needs to move or change?
 - **Database schema.** New columns/tables/indexes? Migration order? Backfill needed for existing rows?
-- **Permissions / roles.** Which roles can see/do this? Admin-only? User-tier gated? (Houston: subscription plans, `config/subscriptions.ts`.)
+- **Permissions / roles.** Which roles can see/do this? Admin-only? User-tier gated? Check the project's role and plan-access conventions.
 - **Plan-access / billing.** Is this a feature flag for paid tiers? Does it affect upgrade incentives?
 - **Auth / session.** New scopes, new session data, token changes?
 - **Analytics / tracking.** New events to fire? Existing events whose meaning changes?
-- **Email / notifications.** New templates? Variables to pass through? (Houston: Resend + Mustache.)
+- **Email / notifications.** New templates? Variables to pass through? Check the project's email provider and template conventions.
 - **Tests.** Which existing tests break? What new tests are needed? Unit vs integration vs e2e split.
 - **Caching / revalidation.** Next.js route segments to mark dynamic, tags to invalidate, etc.
 - **SEO / sitemap / structured data.** If any new public pages.
