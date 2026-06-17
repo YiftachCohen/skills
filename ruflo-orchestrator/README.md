@@ -1,10 +1,11 @@
-# Ruflo Orchestrator Skill
+# Ruflo Orchestrator
 
-A Claude Code skill for orchestrating multi-agent AI swarms using [Ruflo](https://github.com/ruvnet/ruflo).
+Orchestrate multi-agent AI workflows using
+[Ruflo](https://github.com/ruvnet/ruflo).
 
 ## What it does
 
-This skill teaches Claude how to effectively use Ruflo's 100+ MCP tools to:
+This skill teaches an agent how to effectively use Ruflo's 100+ MCP tools to:
 
 - **Coordinate agent swarms** — initialize swarms with the right topology (hierarchical, mesh, star, ring) and spawn specialized agents
 - **Run consensus code reviews** — multiple reviewer agents evaluate code independently, then reach consensus
@@ -17,14 +18,23 @@ It covers all 16 Ruflo agent types across 4 categories (core, specialized, swarm
 
 ## Installation
 
+Claude Code:
+
 ```bash
 npx skills add YiftachCohen/skills --skill ruflo-orchestrator
 ```
 
+Codex can use the same `ruflo-orchestrator/SKILL.md` directory when it is
+linked or copied into the Codex skills folder.
+
 ## Prerequisites
 
-Ruflo must be configured as an MCP server in your Claude Code setup. The skill expects `mcp__ruflo__*` tools to be available.
+Ruflo must be configured as an MCP server in the agent runtime. The skill
+expects `mcp__ruflo__*` tools to be available.
 
 ## When it triggers
 
-The skill activates when you mention multi-agent coordination, swarms, consensus reviews, security scanning, agent memory, or Ruflo directly. It does **not** trigger for standard single-agent tasks like normal code review, debugging, or deployment.
+The skill activates when you mention multi-agent coordination, swarms,
+consensus reviews, security scanning, agent memory, or Ruflo directly. It does
+not trigger for standard single-agent tasks like normal code review, debugging,
+or deployment.

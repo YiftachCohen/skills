@@ -4,14 +4,14 @@
     {
       "id": 0,
       "name": "bug-category-blocks-submission",
-      "prompt": "I just got this feedback from a user of our scholarship platform (Milgapo). Please analyze it.\n\n----\nהיי, ניסיתי להגיש בקשה למלגה ׳קרן רש״י׳ אבל ברגע שאני בוחר את הקטגוריה השלישית בטופס המערכת מקפיאה את הכפתור של ׳הגש׳ ולא נותן ללחוץ. ניסיתי גם בכרום וגם בספארי, אותו דבר. זה באג. אני מנסה כבר יומיים.\n----\n\nFor the purposes of this run, after you do the Phase 1 translation and restatement, assume I (the user) confirm your read is correct so you can proceed to Phase 2 without waiting for me. Use the codebase in this workspace to verify the premise and produce the full analysis.",
+      "prompt": "I just got this feedback from a user of our scholarship platform. Please analyze it.\n\n----\nהיי, ניסיתי להגיש בקשה למלגה ׳קרן לדוגמה׳ אבל ברגע שאני בוחר את הקטגוריה השלישית בטופס המערכת מקפיאה את הכפתור של ׳הגש׳ ולא נותן ללחוץ. ניסיתי גם בכרום וגם בספארי, אותו דבר. זה באג. אני מנסה כבר יומיים.\n----\n\nFor the purposes of this run, after you do the Phase 1 translation and restatement, assume I (the user) confirm your read is correct so you can proceed to Phase 2 without waiting for me. Use the codebase in this workspace to verify the premise and produce the full analysis.",
       "expected_output": "English-language analysis with a Phase 1 translation, an explicit verdict on whether the bug is real (with file:line evidence from the actual codebase), classification, and either a complete root-cause-driven fix with tests/checks or an explanation of why the client is wrong with a Hebrew reply.",
       "files": []
     },
     {
       "id": 1,
       "name": "feature-dashboard-show-submitted",
-      "prompt": "Got this feedback from a paying user of Milgapo. Please analyze.\n\n----\nתשמעו, אני אוהבת את הדשבורד אבל הוא מראה לי רק מלגות חדשות שעוד לא הגשתי. אני רוצה לראות גם את אלה שכבר הגשתי, אולי בטאב נפרד או משהו, כדי שאדע מה הסטטוס שלהן בלי לחפש כל פעם.\n----\n\nAssume I confirm your Phase 1 read, then proceed to a full Phase 2-5 analysis grounded in this codebase. I want the impact analysis to actually reference the dashboard files.",
+      "prompt": "Got this feedback from a paying user of the scholarship platform. Please analyze.\n\n----\nתשמעו, אני אוהבת את הדשבורד אבל הוא מראה לי רק מלגות חדשות שעוד לא הגשתי. אני רוצה לראות גם את אלה שכבר הגשתי, אולי בטאב נפרד או משהו, כדי שאדע מה הסטטוס שלהן בלי לחפש כל פעם.\n----\n\nAssume I confirm your Phase 1 read, then proceed to a full Phase 2-5 analysis grounded in this codebase. I want the impact analysis to actually reference the dashboard files.",
       "expected_output": "English analysis. Premise check should confirm the current dashboard scope by reading actual dashboard files. Verdict should use the canonical label valid change or invalid change. Classification should be feature/change. Phase 4 impact analysis should enumerate UI, i18n, server actions/API, DB/schema, permissions/billing, analytics, tests, migration, performance/caching, and at least one cheaper plus one more-ambitious alternative.",
       "files": []
     },

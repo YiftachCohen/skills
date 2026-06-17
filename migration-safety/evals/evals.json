@@ -1,0 +1,29 @@
+{
+  "skill_name": "migration-safety",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "In the migrations repo, we added a one-off backfill for users who are missing active subscription rows. Before we run it, check whether it is safe, idempotent, and whether a clean-start migration would create the correct rows next time.",
+      "expected_output": "A migration safety review with risk classification, source-of-truth files to inspect, idempotency and clean-start proof or gaps, dry-run/reconciliation plan, and a go/no-go verdict.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "We are deleting the Neon DB tomorrow and rerunning the full MSSQL to Postgres migration. The client says the exported scholarship data setting did not migrate. Verify whether the migration step exists, whether it ran, and whether a clean rebuild would include it.",
+      "expected_output": "A verification-focused response that does not infer from file presence alone; it should check migration registration/order, target markers or data when available, and answer clean-start safety directly.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Should each manual performance index we discovered in production move into a migration, or is it fine to keep them in manual-perf-indexes.sql?",
+      "expected_output": "A recommendation framed around durable clean-start behavior, app/runtime dependency on the indexes, idempotent CREATE INDEX patterns, and whether to encode them in the migration pipeline.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "I wrote a quick script in the repo to compare migrated statuses and it outputs a CSV. Review the migration fix and make sure I don't accidentally ship the probe or generated output.",
+      "expected_output": "The skill should review the actual migration change separately from temporary probes, warn if scratch scripts or generated reconciliation output are staged, preserve useful read-only verification steps, and report idempotency/clean-start safety.",
+      "files": []
+    }
+  ]
+}

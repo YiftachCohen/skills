@@ -65,7 +65,7 @@ In autonomous mode, do not ask for confirmation of a translation, classification
 ## Language rules
 
 - **Detect the original language** of the feedback. Record it (e.g. `he`, `en`, `ar`).
-- **Always respond to the user (the developer/operator running the skill) in English.** This is true regardless of input language and matches the project convention in `agent.md` / `CLAUDE.md` files in repos like Milgapo.
+- **Always respond to the user (the developer/operator running the skill) in English.** This is true regardless of input language and matches common project-agent conventions.
 - **Draft a client-facing reply** when Phase 5 produces a recommendation the user may need to send onward: a real bug was fixed, the client is wrong, the answer is "don't do it", or more information is needed. If the original feedback was Hebrew, reply in Hebrew with an English gloss; if original was English, reply in English. For other source languages, default to English and flag it for the user.
 
 ## Project awareness

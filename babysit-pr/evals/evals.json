@@ -1,0 +1,29 @@
+{
+  "skill_name": "babysit-pr",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "babysit PR #742 until green. CodeRabbit has comments and CI is red.",
+      "expected_output": "A pass-based PR loop: resolve PR, poll checks and unresolved threads, fetch failing logs, verify comments before edits, push once if fixes are made, and end with DONE, NOT YET, or BLOCKED.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "This PR is still pending CI after my push. Can you watch it and fix anything that fails?",
+      "expected_output": "The skill should poll current checks, avoid speculative edits while checks are pending, wait or report NOT YET, and only root-cause failures once they actually fail.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "CodeRabbit says our migration backfill is not idempotent on this PR. Please handle the review thread and get it green.",
+      "expected_output": "The skill should verify the review comment against actual migration code, apply migration-safety principles for idempotency and clean-start proof, fix or dispute the comment, and report PR loop status.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "babysit this branch, I think it just needs a PR and then wait for checks",
+      "expected_output": "If no PR exists, the skill should inspect branch cleanliness and ahead commits, offer or perform PR creation through the repo workflow when clearly requested, then continue polling checks/review comments in the same pass instead of stopping prematurely.",
+      "files": []
+    }
+  ]
+}
