@@ -4,13 +4,13 @@
     {
       "id": 1,
       "prompt": "babysit PR #742 until green. CodeRabbit has comments and CI is red.",
-      "expected_output": "A pass-based PR loop: resolve PR, poll checks and unresolved threads, fetch failing logs, verify comments before edits, push once if fixes are made, and end with DONE, NOT YET, or BLOCKED.",
+      "expected_output": "An auto-looping PR loop: resolve PR, then repeat passes (poll checks and unresolved threads, fetch failing logs, verify comments before edits, push at most once per pass) within the single invocation, sleeping between passes while CI reruns. It should keep going on NOT YET rather than handing back to the user, and only return on DONE, BLOCKED, or a safety cap (max passes / same-check-failed-twice / no-change timeout).",
       "files": []
     },
     {
       "id": 2,
       "prompt": "This PR is still pending CI after my push. Can you watch it and fix anything that fails?",
-      "expected_output": "The skill should poll current checks, avoid speculative edits while checks are pending, wait or report NOT YET, and only root-cause failures once they actually fail.",
+      "expected_output": "The skill should poll current checks, avoid speculative edits while checks are pending, and sleep-and-re-poll in a loop (not return after one check) until checks resolve. Only once a check actually fails does it root-cause and fix; it returns DONE when green, BLOCKED on a hard stop, or NOT YET only if it hits the no-change wait cap.",
       "files": []
     },
     {
@@ -23,6 +23,24 @@
       "id": 4,
       "prompt": "babysit this branch, I think it just needs a PR and then wait for checks",
       "expected_output": "If no PR exists, the skill should inspect branch cleanliness and ahead commits, offer or perform PR creation through the repo workflow when clearly requested, then continue polling checks/review comments in the same pass instead of stopping prematurely.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "just give me a one-off status check on PR #742, don't sit on it",
+      "expected_output": "The skill should detect the single-pass intent (--once / status-only), run exactly one pass (poll checks and review threads, no sleep-loop), and return immediately with DONE, NOT YET, or BLOCKED plus the current state.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "A reviewer bot flagged two real issues on PR #742. Fix them and get the PR clean.",
+      "expected_output": "After verifying each flagged issue against the cited code and pushing the fix, the skill should resolve the corresponding review threads (via the resolveReviewThread GraphQL mutation) so the PR can reach DONE — treating any reviewer (CodeRabbit, Copilot, human) the same way, resolving only threads the push genuinely addressed and replying instead of resolving on false positives. It should not declare DONE while the reviewer is still re-reviewing the latest push.",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "babysit PR #742 — the only red check is the Vercel preview-comment bot, everything required is green.",
+      "expected_output": "The skill should distinguish required (branch-protection) checks from advisory ones, recognize the failing check as advisory/non-gating, report it but not loop on it or block, and declare DONE once all required checks are green and threads are clean.",
       "files": []
     }
   ]

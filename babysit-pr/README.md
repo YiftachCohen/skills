@@ -4,6 +4,10 @@ Drive a GitHub pull request through the "make it green" loop: inspect CI,
 review bot feedback, fix real issues, push once per pass, and report whether
 the PR is done, still waiting, or blocked.
 
+By default it **loops on its own** — running passes back-to-back in a single
+invocation, sleeping while CI runs, and only stopping when the PR is `DONE`,
+`BLOCKED`, or a safety cap is hit. Pass `--once` for a single status pass.
+
 ## Installation
 
 Claude Code:
@@ -24,10 +28,14 @@ report whether the PR is done, still waiting, or blocked.
 Example:
 
 ```text
-/babysit-pr 123
+/babysit-pr 123                  # loop until DONE / BLOCKED / capped
 /babysit-pr https://github.com/org/repo/pull/123
 /babysit-pr can you get this PR green and review-clean?
+/babysit-pr 123 --once           # single pass, then report and return
 ```
+
+For cross-session cadence (e.g. poll every 10 min for hours), wrap a `--once`
+pass with the `/loop` skill rather than holding one long invocation open.
 
 ## What it checks
 
