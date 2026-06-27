@@ -9,7 +9,13 @@ description: |
   truth for the PR loop: resolve the PR, poll CI and unresolved review threads,
   root-cause failures, verify review comments before changing code, push once per
   pass, and report DONE / NOT YET / BLOCKED. It should trigger even if the user
-  only says "PR is red" or "can you babysit it?".
+  only says "PR is red", "can you babysit it?", "looks like test in PR is
+  stuck", "CodeRabbit is still running", "another agent fixed CI", or attaches
+  PR instructions / CI logs / task notifications that define the publish flow.
+  It should also handle reviewer-bot rate limits, quota exhaustion, 429/resource
+  exhausted messages, and "CodeRabbit hit rate limit" by waiting out the cooldown
+  and re-triggering review through a repo-supported mechanism instead of making
+  speculative code changes.
 allowed-tools:
   - Bash
   - Read
@@ -62,6 +68,42 @@ Use existing project skills when they exist:
 - If a review comment is about migration/data correctness, apply
   `migration-safety` principles before fixing.
 
+## Artifact-first preflight
+
+Before resolving the PR, look for task artifacts that may already define the
+correct flow. This matters because PR babysitting often starts after another
+agent, Conductor workspace, or instruction file has already narrowed the job.
+
+Read these first when present or referenced:
+
+- `PR instructions.md`, task notification output, Conductor workspace notes, or
+  handoff prompts.
+- Attached CI logs or review excerpts pasted by the user.
+- Existing local status from another agent, especially "CI was fixed" or "only
+  CodeRabbit is still running".
+
+Treat those artifacts as hypotheses to verify against the live PR state. Do not
+blindly replay stale instructions: after reading them, poll the current PR,
+checks, latest commit, and unresolved threads before deciding whether anything
+is still actionable.
+
+If the user says a check is "stuck" or a bot action is "still running", classify
+the state before editing:
+
+- **Pending but normal:** recent push, queue delay, or reviewer re-run in
+  progress. Wait and re-poll; do not patch code.
+- **Reviewer rate-limited:** CodeRabbit, Copilot, or another reviewer bot says
+  it hit a rate limit, quota, 429, "resource exhausted", or "try again later".
+  This is not a code failure. Capture the evidence, wait through the cooldown,
+  then re-trigger review using a repo-supported mechanism.
+- **Stale/stuck:** no state change past the repo's normal window, cancelled
+  workflow, missing webhook, or old check attached to a previous SHA. Rerun or
+  refresh the check when safe; otherwise report `BLOCKED` with the exact reason.
+- **Advisory only:** non-required preview/comment bot is red or pending while
+  required checks are green. Report it but do not block `DONE`.
+- **Actually failing:** required check reached failure/error. Root-cause before
+  editing.
+
 ## Autonomy and stop conditions
 
 **Loop by default.** Babysitting means owning the PR until it lands, so keep
@@ -96,6 +138,11 @@ continue the loop." Concretely:
   (CI may be queued/stuck; let the user decide).
 - A genuine flake/outage: rerun the job once, then if it still fails treat it as
   a real failure (root-cause) or `BLOCKED`, not an infinite rerun.
+- Reviewer-bot rate limit: wait through the stated cooldown, or use a conservative
+  default of 15-30 minutes if no retry time is given, then re-trigger review once.
+  If the same rate limit comes back twice in the same invocation, surface
+  `NOT YET` with the evidence and suggested next check time instead of burning
+  loop passes.
 
 Ask before destructive or high-risk actions:
 
@@ -113,6 +160,8 @@ invocation — do not return between iterations unless a pass is terminal or a c
 is hit.
 
 1. Run Step 0 once to resolve the repo/PR (no need to re-resolve every iteration).
+   If Artifact-first preflight found instructions, carry their constraints into
+   Step 0 and record which ones were verified against live PR state.
 2. **Pass loop** — repeat until terminal or capped:
    a. Steps 1–4: poll fresh state, root-cause failures, verify review threads,
       apply fixes, push at most once.
@@ -158,6 +207,10 @@ For waits beyond the bash ceiling, run it as a background command and act on the
 completion notification — still no idle model turns. Respect the ~30 min
 no-change cap before returning `NOT YET`.
 
+For reviewer-bot rate limits, use the same token discipline: one blocking shell
+wait for the cooldown, then one re-poll/re-trigger attempt. Do not wake the model
+every minute to say the bot is still rate-limited.
+
 **2. Read heavy things in an isolated subagent, not the main thread.** Failing
 CI logs and the files a review thread cites are large and would otherwise sit in
 context for every remaining pass (context grows each pass → later turns cost
@@ -192,6 +245,17 @@ git rev-parse --show-toplevel 2>/dev/null
 git status --short
 git branch --show-current
 ```
+
+Also check whether an instruction artifact exists in the repo root or current
+task context:
+
+```bash
+ls "PR instructions.md" .context 2>/dev/null
+```
+
+If an instruction artifact names a branch pattern, base branch, validation gate,
+draft/non-draft requirement, or "push once" rule, follow it unless the live PR
+state proves it stale or unsafe. Call out any mismatch.
 
 Resolve the PR and mode:
 
@@ -301,6 +365,57 @@ gh pr view "$PR" --comments
 Treat pure status summaries as non-actionable. Treat concrete file/line
 findings as review work even if they are not threaded.
 
+Also scan reviewer-bot check descriptions, PR comments, and review summaries for
+rate-limit language before treating a missing review as a failure:
+
+- `rate limit`, `rate limited`, `quota`, `429`, `too many requests`,
+  `resource exhausted`, `try again later`, `temporarily unavailable`,
+  `retry after`, `limit exceeded`, `Review limit reached`,
+  `More reviews will be available in`, `PR review rate limit`,
+  `prepaid credits`, `review add-on`.
+- If a retry time or `Retry-After` value is present, record it. If not, use a
+  conservative 15-30 minute cooldown and say that it is an inferred wait.
+
+Rate-limit evidence means the reviewer did not make a code-quality finding yet.
+Report it as waiting/retry state, not as a code failure.
+
+### Reviewer bot rate limits
+
+When CodeRabbit or another review bot is rate-limited:
+
+1. Capture evidence: which bot, where it appeared (check/comment/review), latest
+   PR head SHA, timestamp, and any retry-after/cooldown text.
+   - For CodeRabbit, a warning titled `Review limit reached` with text like
+     `More reviews will be available in 21 minutes and 34 seconds` is explicit
+     cooldown evidence. Parse that duration and add a small buffer before
+     re-triggering.
+   - If the warning says prepaid credits are used up or the review add-on is not
+     enabled, include that billing note in the report; waiting may clear the
+     normal rate window, but usage-based credits require an org admin decision.
+2. Confirm required CI state separately. A rate-limited reviewer bot may be
+   advisory; do not block `DONE` unless unresolved actionable review coverage is
+   required for this repo or the user explicitly wants review-clean with that bot.
+3. Wait through the cooldown in one blocking shell call. Prefer the bot's stated
+   retry time; otherwise use 15-30 minutes depending on repo norms and remaining
+   loop budget.
+4. Re-trigger review once using the least noisy repo-supported mechanism:
+   - For CodeRabbit, if its own comment says a review can be triggered using
+     `@coderabbitai review`, post exactly that PR comment after the cooldown.
+   - If the failed/pending item is a GitHub Actions workflow or check that can be
+     rerun, rerun that workflow/check.
+   - If repo history, PR instructions, or existing bot comments show a supported
+     command such as a reviewer-bot "review again" comment, use that exact
+     convention.
+   - If no supported trigger is evident, ask before using noisy fallbacks like
+     closing/reopening the PR, pushing an empty commit, or posting a guessed bot
+     command.
+5. Re-poll after the re-trigger. If the bot reviews successfully, continue the
+   normal review-thread loop. If the same rate limit returns twice, stop the
+   active loop with `NOT YET`, include the next suggested check time, and do not
+   edit code.
+
+Never patch application code to satisfy a reviewer-bot infrastructure limit.
+
 ## Step 2 - Handle failing CI
 
 For each failing check, find the real cause before editing.
@@ -334,10 +449,18 @@ First rule out environment reality:
 - Missing dependency after merge.
 - Flake or external outage.
 - Secret/config unavailable in CI.
+- Reviewer bot rate limit or quota exhaustion. Wait/re-trigger the reviewer
+  instead of editing code.
 - Branch out of date with base (a long loop can drift). If a required
   "up-to-date" check fails and the update merges cleanly, update the branch; if
   it would conflict, stop and ask (rebase-with-conflicts is in the ask-first
   list).
+- Stuck check attached to an older commit SHA. Compare the check/run head SHA
+  with the PR head before editing; if it is stale, rerun/refresh rather than
+  changing code.
+- Reviewer or bot re-review still processing after the latest push. Wait for the
+  current SHA's review result instead of declaring `DONE` early or fixing a
+  comment from an older diff.
 
 If it is likely a flake or external outage, rerun the failed job/check once if
 allowed, then report `NOT YET`. Do not patch code to satisfy a flaky symptom.
@@ -460,6 +583,8 @@ When you do surface it, include:
 - Pending checks.
 - Failing checks.
 - Open actionable threads count.
+- Reviewer-bot rate-limit evidence and next retry time, if that is why the loop
+  is waiting.
 - Whether to re-invoke to continue.
 
 ### `BLOCKED`
@@ -513,6 +638,15 @@ For very quick status requests, keep it shorter but still end with `DONE`,
 - Stopping at `BLOCKED` just because no PR exists when the clean branch is
   clearly ready for PR creation.
 - Looping forever when the same failure keeps coming back.
+- Treating "stuck" as "failed" without checking age, SHA, queue state, and
+  required/advisory status.
+- Treating CodeRabbit/Copilot rate limits as code failures. Rate limits call for
+  wait + supported re-trigger, not speculative patches.
+- Posting guessed reviewer-bot commands or pushing empty commits just to wake a
+  bot, unless the repo's instructions/history show that convention or the user
+  approves it.
+- Ignoring `PR instructions.md` or task notifications that specify the target
+  branch, validation gate, or draft/non-draft PR requirement.
 - Polling by waking the model every interval (`sleep` then a fresh turn) instead
   of one blocking shell call — each idle wake is a wasted model turn over a
   growing context.

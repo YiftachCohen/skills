@@ -5,10 +5,14 @@ description: |
   work. Use this skill whenever the user mentions migrations, backfills,
   idempotency, dry runs, clean-start rebuilds, "delete everything and rerun",
   Neon, MSSQL, Postgres, schema drift, one-off data fixes, indexes, triggers,
-  reconciliation, or asks "will this work next migration run?". This skill should
-  trigger before implementing or running risky migration changes. It forces a
-  dry-run impact check, idempotency proof, source/target reconciliation, rerun
-  safety verdict, and clear go/no-go recommendation.
+  reconciliation, or asks "will this work next migration run?". Also trigger on
+  transcript-shaped migration prompts like "did this migration run?", "is this in
+  the script?", "we already decided this last time", "should this index be in the
+  migrator?", "my partner deleted the DB and reran it", or "find the old
+  transcript/decision before changing it." This skill should trigger before
+  implementing or running risky migration changes. It forces a dry-run impact
+  check, idempotency proof, source/target reconciliation, rerun safety verdict,
+  and clear go/no-go recommendation.
 allowed-tools:
   - Bash
   - Read
@@ -127,6 +131,21 @@ If the user asks whether a past migration "ran", inspect migration logs, marker
 tables, commit history, or target data where available. Do not infer from the
 presence of a file alone.
 
+If the user says the team "already decided this", asks whether something is "in
+the script", or references a prior migration discussion, do a small transcript
+and repo archaeology pass before proposing a change:
+
+- Search current repo docs, `.context/`, commit messages, PR notes, and migration
+  comments for the decision.
+- If local Claude transcripts are available, search only for human prompts and
+  concise assistant conclusions; avoid counting tool output, system prompts, or
+  injected skill text as evidence.
+- Convert any recovered decision into a current proof: the old decision is useful
+  context, but the live source of truth is still the code, data, and migration
+  registration now.
+- If the prior decision was never encoded in the durable migration path, say so
+  directly and recommend the smallest durable encoding.
+
 ## Phase 3 - Prove idempotency and clean-start safety
 
 Answer these questions explicitly:
@@ -182,6 +201,10 @@ When implementing:
 - Keep app repo schema/types in sync when migration output changes the runtime
   contract.
 - Add or update tests around the invariant, not just the implementation detail.
+- For indexes discovered through production performance work, decide whether the
+  app relies on them during normal operation. Durable runtime indexes belong in
+  an idempotent migration/rebuild step; ad hoc diagnostic indexes can stay
+  manual only when the app does not depend on them.
 
 Do not hide a data problem with UI filtering unless the product intentionally no
 longer wants that data visible.

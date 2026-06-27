@@ -42,6 +42,24 @@
       "prompt": "babysit PR #742 — the only red check is the Vercel preview-comment bot, everything required is green.",
       "expected_output": "The skill should distinguish required (branch-protection) checks from advisory ones, recognize the failing check as advisory/non-gating, report it but not loop on it or block, and declare DONE once all required checks are green and threads are clean.",
       "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "looks like test in PR is stuck. There is a PR instructions.md in the repo from the previous agent; use that as the source of truth and tell me whether to wait, rerun, or fix something.",
+      "expected_output": "The skill should read the PR instruction artifact before acting, verify any branch/base/check requirements against live PR state, then classify the stuck check by age, SHA, required/advisory status, and queue/cancelled/failure state. It should wait or rerun when appropriate and avoid speculative code edits until a required check actually fails.",
+      "files": []
+    },
+    {
+      "id": 9,
+      "prompt": "why is the CodeRabbit action still running? Another agent said CI was fixed already.",
+      "expected_output": "The skill should treat the other agent's claim as a hypothesis, poll current PR checks/review threads/latest SHA, decide whether CodeRabbit is still re-reviewing, stale on an older commit, advisory, or actually blocking, and report DONE/NOT YET/BLOCKED with the precise live state instead of assuming code changes are needed.",
+      "files": []
+    },
+    {
+      "id": 10,
+      "prompt": "babysit this PR. CodeRabbit commented: \"Review limit reached\" and \"More reviews will be available in 21 minutes and 34 seconds\". The expanded resolution says to comment \"@coderabbitai review\" after more reviews are available, and also says our org used up prepaid credits. Can you wait it out and then re-trigger the review?",
+      "expected_output": "The skill should classify CodeRabbit's Review limit reached warning as reviewer-bot infrastructure state, not a code failure; capture the exact cooldown, PR head SHA, and billing/prepaid-credit note; check required CI separately; wait through about 21m34s plus a small buffer using one blocking wait; post the exact supported PR comment @coderabbitai review after the cooldown; avoid guessed commands, empty commits, or speculative code edits; re-poll after re-trigger; and if the same rate limit returns twice, surface NOT YET with evidence, billing note, and the next suggested retry time.",
+      "files": []
     }
   ]
 }

@@ -24,6 +24,30 @@
       "prompt": "I wrote a quick script in the repo to compare migrated statuses and it outputs a CSV. Review the migration fix and make sure I don't accidentally ship the probe or generated output.",
       "expected_output": "The skill should review the actual migration change separately from temporary probes, warn if scratch scripts or generated reconciliation output are staged, preserve useful read-only verification steps, and report idempotency/clean-start safety.",
       "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "But we already decided this the last time we migrated it. Can you find the transcript or old PR notes, then check whether that decision is actually encoded in the migration script now?",
+      "expected_output": "The skill should do lightweight transcript/repo archaeology without treating tool output or injected prompts as evidence, recover the prior decision if available, then verify the current migration registration/code/data path instead of trusting memory. It should distinguish old discussion from durable implementation and give a go/no-go or smallest encoding fix.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "My partner deleted the Neon DB and reran the full migration today, and the scholarship export columns came back wrong again. Is the fix only in current data or will clean-start keep recreating the bug?",
+      "expected_output": "A clean-start focused review that checks whether the fix lives in the durable migration pipeline, not only in a one-off backfill or production row patch. It should identify source/target code, rerun behavior, reconciliation queries, and whether a durable migration change is required.",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "We added a few manual indexes after prod got slow. Should they move into the migrator, or can we leave them in the manual perf-index script?",
+      "expected_output": "A recommendation based on actual app query/runtime dependency and clean-rebuild needs. Durable runtime indexes should be encoded idempotently in the migration/rebuild path, while diagnostic or one-off indexes may stay manual if the app does not depend on them.",
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "There's a local one-off script that updates question groups after migration. Before we ship, check if rerunning the main questions migrator would undo it or make duplicates.",
+      "expected_output": "The skill should classify the one-off as risky until proven durable, inspect migration ordering and upsert keys, prove idempotency/partial-rerun behavior, and recommend folding the logic into the main pipeline if clean-start would otherwise regress.",
+      "files": []
     }
   ]
 }
