@@ -1,0 +1,41 @@
+{
+  "skill_name": "loom-watch",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Watch this Loom and tell me what changed visually: https://www.loom.com/share/1c024b2b97f4432cabd749775a4726ec",
+      "expected_output": "The skill should run the bundled extractor, notice that captions/transcript are empty, inspect the sampled frames, and summarize the visible screen state without pretending there was narration.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Can you review this Loom bug report and give me repro steps plus timestamps?",
+      "expected_output": "The skill should extract transcript and frames, read the manifest first, inspect frames around relevant cues, and report timestamped repro evidence plus any missing information.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Please extract the transcript from this Loom, but also verify any 'this/that' references against the screen.",
+      "expected_output": "The skill should provide timestamped transcript text when available and cross-check deictic references against frames, rather than returning transcript text alone.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "This Loom is private and the extractor cannot access it. What should I do?",
+      "expected_output": "The skill should not try to bypass access controls. It should explain that private/password/SSO Looms need an accessible share link or user-provided transcript/screenshots.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "This Hebrew Loom says unsupported_language and has no transcript. Can you still understand what was said?",
+      "expected_output": "The skill should rerun the extractor with the explicit OpenAI fallback (`--openai-transcribe --language he`) when an API key is available, extract audio, generate a timestamped transcript, align it with frames in the manifest, and clearly report if the API key is missing.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "I don't want to use API credits for a Hebrew Loom. Can you use local Whisper instead?",
+      "expected_output": "The skill should prefer `--local-whisper --language he` when whisper.cpp and the local model are installed, extract Loom audio, consume the generated VTT output, rebuild the manifest, and report clearly if no local transcriber/model is installed. It may fall back to `--local-transcribe-command` for other open-source transcribers.",
+      "files": []
+    }
+  ]
+}

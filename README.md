@@ -15,6 +15,7 @@ Install an individual skill in Claude Code:
 ```bash
 npx skills add YiftachCohen/skills --skill babysit-pr
 npx skills add YiftachCohen/skills --skill client-feedback
+npx skills add YiftachCohen/skills --skill loom-watch
 npx skills add YiftachCohen/skills --skill migration-safety
 ```
 
@@ -27,6 +28,7 @@ shared source of truth is the `SKILL.md` file inside each skill directory.
 |---|---|
 | [babysit-pr](./babysit-pr) | Drive a GitHub pull request through failing CI, bot comments, review feedback, and final green status. |
 | [client-feedback](./client-feedback) | Translate, verify, classify, and respond to client or end-user feedback before implementing changes. |
+| [loom-watch](./loom-watch) | Convert Loom recordings into metadata, captions, sampled frames, and a timestamped review manifest. |
 | [migration-safety](./migration-safety) | Review migrations, backfills, dry runs, idempotency, clean-start rebuilds, and reconciliation plans. |
 
 ## Repository Scope

@@ -1,0 +1,873 @@
+#!/usr/bin/env python3
+import argparse
+import html
+import json
+import math
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import uuid
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+
+GRAPHQL_URL = "https://www.loom.com/graphql"
+VIDEO_ID_RE = re.compile(r"loom\.com/(?:share|embed)/([0-9a-fA-F]{32})")
+
+
+class LoomWatchError(Exception):
+    def __init__(self, exit_code, message):
+        super().__init__(message)
+        self.exit_code = exit_code
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Extract Loom metadata, captions, and screen frames into a manifest."
+    )
+    parser.add_argument("url", help="Loom share/embed URL")
+    parser.add_argument("--fresh", action="store_true", help="Ignore cached output")
+    parser.add_argument(
+        "--out-dir",
+        default="tmp/loom-watch",
+        help="Base output directory; video ID is appended (default: tmp/loom-watch)",
+    )
+    parser.add_argument(
+        "--max-frames",
+        type=int,
+        default=40,
+        help="Maximum number of frames to extract (default: 40)",
+    )
+    parser.add_argument(
+        "--interval",
+        type=float,
+        default=5.0,
+        help="Fallback visual sampling interval in seconds (default: 5)",
+    )
+    parser.add_argument(
+        "--openai-transcribe",
+        action="store_true",
+        help="When Loom captions are empty/unavailable, extract audio and transcribe it with OpenAI.",
+    )
+    parser.add_argument(
+        "--local-transcribe-command",
+        help=(
+            "When Loom captions are empty/unavailable, extract audio and run this local "
+            "transcription command. Placeholders: {audio}, {vtt}, {json}, {txt}, {out_dir}, {language}."
+        ),
+    )
+    parser.add_argument(
+        "--local-whisper",
+        action="store_true",
+        help=(
+            "Shortcut for local whisper.cpp transcription. Auto-detects whisper-cli and "
+            "a GGML model, then writes timestamped VTT captions."
+        ),
+    )
+    parser.add_argument(
+        "--local-whisper-model",
+        help="Path to a whisper.cpp GGML model for --local-whisper.",
+    )
+    parser.add_argument(
+        "--local-whisper-gpu",
+        action="store_true",
+        help="Allow whisper.cpp GPU/Metal mode. Default is CPU because Metal can crash on some installs.",
+    )
+    parser.add_argument(
+        "--language",
+        help="Optional ISO-639-1 input language hint for fallback transcription, e.g. he.",
+    )
+    parser.add_argument(
+        "--openai-model",
+        default="whisper-1",
+        help="OpenAI transcription model for fallback transcription (default: whisper-1).",
+    )
+    parser.add_argument(
+        "--transcription-prompt",
+        help="Optional prompt/context for the transcription model. Use the audio language.",
+    )
+    return parser.parse_args()
+
+
+def extract_video_id(url):
+    match = VIDEO_ID_RE.search(url)
+    if not match:
+        raise LoomWatchError(2, "Could not find a 32-character Loom video ID in the URL.")
+    return match.group(1).lower()
+
+
+def request_json(url, data=None, headers=None):
+    body = None
+    req_headers = headers or {}
+    if data is not None:
+        body = json.dumps(data).encode("utf-8")
+        req_headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "x-loom-request-source": "loom_web",
+            "apollographql-client-name": "web",
+            **req_headers,
+        }
+    request = urllib.request.Request(url, data=body, headers=req_headers)
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")[:500]
+        raise LoomWatchError(3, f"Request failed for {url}: HTTP {exc.code}: {body}") from exc
+    except (urllib.error.URLError, json.JSONDecodeError) as exc:
+        raise LoomWatchError(3, f"Request failed for {url}: {exc}") from exc
+
+
+def request_text(url, exit_code=4):
+    try:
+        with urllib.request.urlopen(url, timeout=60) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except urllib.error.URLError as exc:
+        raise LoomWatchError(exit_code, f"Download failed for {url}: {exc}") from exc
+
+
+def graphql(operation_name, variables, query):
+    payload = {
+        "operationName": operation_name,
+        "variables": variables,
+        "query": query,
+    }
+    result = request_json(
+        GRAPHQL_URL,
+        payload,
+        headers={
+            "Origin": "https://www.loom.com",
+            "graphql-operation-name": operation_name,
+            "apollographql-client-version": "45a5bd4",
+        },
+    )
+    if result.get("errors"):
+        raise LoomWatchError(3, f"Loom GraphQL returned errors: {result['errors']}")
+    return result.get("data") or {}
+
+
+def fetch_video(video_id):
+    query = """
+    query GetVideoSSR($videoId: ID!, $password: String) {
+      getVideo(id: $videoId, password: $password) {
+        __typename
+        ... on PrivateVideo {
+          id
+          status
+          message
+          __typename
+        }
+        ... on VideoPasswordMissingOrIncorrect {
+          id
+          message
+          __typename
+        }
+        ... on RegularUserVideo {
+          id
+          __typename
+          name
+          description
+          createdAt
+          privacy
+          needs_password
+          downloadable
+          show_transcript_to_viewer
+          owner { display_name }
+          video_properties { duration durationMs width height }
+        }
+      }
+    }
+    """
+    data = graphql("GetVideoSSR", {"videoId": video_id, "password": None}, query)
+    video = data.get("getVideo")
+    if not video:
+        raise LoomWatchError(3, "Loom did not return video metadata.")
+    if video.get("message"):
+        raise LoomWatchError(3, f"Loom metadata error: {video['message']}")
+    return video
+
+
+def fetch_video_url(video_id):
+    query = """
+    query GetVideoSource($videoId: ID!, $password: String, $acceptableMimes: [CloudfrontVideoAcceptableMime]) {
+      getVideo(id: $videoId, password: $password) {
+        ... on RegularUserVideo {
+          id
+          nullableRawCdnUrl(acceptableMimes: $acceptableMimes, password: $password) {
+            url
+            __typename
+          }
+          __typename
+        }
+        __typename
+      }
+    }
+    """
+    data = graphql(
+        "GetVideoSource",
+        {
+            "videoId": video_id,
+            "password": None,
+            "acceptableMimes": ["DASH", "M3U8", "MP4", "WEBM"],
+        },
+        query,
+    )
+    video = data.get("getVideo") or {}
+    payload = video.get("nullableRawCdnUrl") or {}
+    return payload.get("url")
+
+
+def fetch_transcript_details(video_id):
+    query = """
+    query FetchVideoTranscript($videoId: ID!, $password: String) {
+      fetchVideoTranscript(videoId: $videoId, password: $password) {
+        ... on VideoTranscriptDetails {
+          idv2
+          video_id
+          source_url
+          captions_source_url
+          transcription_status
+          language
+        }
+        ... on GenericError {
+          message
+        }
+      }
+    }
+    """
+    data = graphql("FetchVideoTranscript", {"videoId": video_id, "password": None}, query)
+    details = data.get("fetchVideoTranscript")
+    if not details:
+        return {}
+    if details.get("message"):
+        return {"error": details["message"]}
+    return details
+
+
+def parse_vtt_timestamp(value):
+    parts = value.strip().split(":")
+    if len(parts) == 2:
+        minutes, seconds = parts
+        hours = 0
+    elif len(parts) == 3:
+        hours, minutes, seconds = parts
+    else:
+        return 0.0
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+
+
+def format_timestamp(seconds):
+    seconds = max(0.0, float(seconds))
+    whole = int(seconds)
+    return f"{whole // 60:02d}:{whole % 60:02d}"
+
+
+def parse_vtt(vtt):
+    cues = []
+    lines = vtt.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if "-->" not in line:
+            i += 1
+            continue
+        start_raw, end_raw = [part.strip().split(" ")[0] for part in line.split("-->", 1)]
+        i += 1
+        text_lines = []
+        while i < len(lines) and lines[i].strip():
+            text_lines.append(re.sub(r"<[^>]+>", "", html.unescape(lines[i].strip())))
+            i += 1
+        text = " ".join(text_lines).strip()
+        if text:
+            cues.append(
+                {
+                    "start": parse_vtt_timestamp(start_raw),
+                    "end": parse_vtt_timestamp(end_raw),
+                    "text": text,
+                }
+            )
+        i += 1
+    return cues
+
+
+def duration_seconds(video):
+    props = video.get("video_properties") or {}
+    if props.get("durationMs"):
+        return float(props["durationMs"]) / 1000.0
+    if props.get("duration"):
+        return float(props["duration"])
+    return 0.0
+
+
+def pick_frame_times(cues, duration, max_frames, interval):
+    times = []
+    for cue in cues:
+        times.append(cue["start"])
+    if duration > 0:
+        fallback_count = max(1, int(math.ceil(duration / max(interval, 0.5))))
+        for n in range(fallback_count + 1):
+            times.append(min(duration, n * interval))
+        if duration > 1:
+            times.append(max(0.0, duration - 0.25))
+    if not times:
+        times = [0.0]
+
+    deduped = []
+    for ts in sorted(max(0.0, float(t)) for t in times):
+        if not deduped or abs(ts - deduped[-1]) >= 0.75:
+            deduped.append(ts)
+
+    if len(deduped) <= max_frames:
+        return deduped
+
+    # Preserve coverage across the whole recording when there are many cues.
+    step = (len(deduped) - 1) / float(max_frames - 1)
+    return [deduped[round(i * step)] for i in range(max_frames)]
+
+
+def signed_relative_url(base_url, relative_or_absolute):
+    joined = urllib.parse.urljoin(base_url, relative_or_absolute)
+    joined_parts = urllib.parse.urlsplit(joined)
+    base_query = urllib.parse.urlsplit(base_url).query
+    query = joined_parts.query or base_query
+    return urllib.parse.urlunsplit(
+        (joined_parts.scheme, joined_parts.netloc, joined_parts.path, query, joined_parts.fragment)
+    )
+
+
+def rewrite_media_playlist(playlist_text, playlist_url):
+    rewritten = []
+    for line in playlist_text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            rewritten.append(line)
+        else:
+            rewritten.append(signed_relative_url(playlist_url, stripped))
+    return "\n".join(rewritten) + "\n"
+
+
+def select_variant_playlist(master_text):
+    best = None
+    pending_bandwidth = None
+    for line in master_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#EXT-X-STREAM-INF"):
+            match = re.search(r"BANDWIDTH=(\d+)", stripped)
+            pending_bandwidth = int(match.group(1)) if match else 0
+            continue
+        if pending_bandwidth is not None and stripped and not stripped.startswith("#"):
+            candidate = (pending_bandwidth, stripped)
+            if best is None or candidate[0] > best[0]:
+                best = candidate
+            pending_bandwidth = None
+    return best[1] if best else None
+
+
+def select_audio_playlist(master_text):
+    for line in master_text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("#EXT-X-MEDIA") or 'TYPE=AUDIO' not in stripped:
+            continue
+        match = re.search(r'URI="([^"]+)"', stripped)
+        if match:
+            return match.group(1)
+    return None
+
+
+def write_local_playlist(playlist_url, out_path):
+    playlist_text = request_text(playlist_url, exit_code=5)
+    out_path.write_text(rewrite_media_playlist(playlist_text, playlist_url), encoding="utf-8")
+    return str(out_path)
+
+
+def prepare_video_input(video_url, out_dir):
+    path = urllib.parse.urlsplit(video_url).path.lower()
+    if not path.endswith(".m3u8"):
+        return video_url
+
+    master_text = request_text(video_url, exit_code=5)
+    variant = select_variant_playlist(master_text)
+    if variant:
+        variant_url = signed_relative_url(video_url, variant)
+        return write_local_playlist(variant_url, out_dir / "video-playlist.m3u8")
+    else:
+        local_playlist = out_dir / "video-playlist.m3u8"
+        local_playlist.write_text(rewrite_media_playlist(master_text, video_url), encoding="utf-8")
+        return str(local_playlist)
+
+
+def prepare_audio_input(video_url, out_dir):
+    path = urllib.parse.urlsplit(video_url).path.lower()
+    if not path.endswith(".m3u8"):
+        return video_url
+
+    master_text = request_text(video_url, exit_code=5)
+    audio = select_audio_playlist(master_text)
+    if audio:
+        audio_url = signed_relative_url(video_url, audio)
+        return write_local_playlist(audio_url, out_dir / "audio-playlist.m3u8")
+
+    local_playlist = out_dir / "audio-playlist.m3u8"
+    local_playlist.write_text(rewrite_media_playlist(master_text, video_url), encoding="utf-8")
+    return str(local_playlist)
+
+
+def run_ffmpeg(video_input, frames_dir, frame_times):
+    if not shutil.which("ffmpeg"):
+        raise LoomWatchError(6, "ffmpeg is not installed or not on PATH.")
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    frames = []
+    for idx, timestamp in enumerate(frame_times):
+        frame_name = f"frame_{idx:03d}_{timestamp:07.2f}.png"
+        frame_path = frames_dir / frame_name
+        command = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-ss",
+            f"{timestamp:.3f}",
+            "-protocol_whitelist",
+            "file,http,https,tcp,tls,crypto,data",
+            "-i",
+            video_input,
+            "-frames:v",
+            "1",
+            str(frame_path),
+        ]
+        try:
+            subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as exc:
+            if idx == 0:
+                message = exc.stderr.decode("utf-8", errors="replace").strip()
+                raise LoomWatchError(6, f"ffmpeg failed: {message}") from exc
+            continue
+        frames.append({"timestamp": timestamp, "path": frame_path})
+    return frames
+
+
+def ffmpeg_base_command():
+    return [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-protocol_whitelist",
+        "file,http,https,tcp,tls,crypto,data",
+    ]
+
+
+def extract_audio(audio_input, out_dir):
+    if not shutil.which("ffmpeg"):
+        raise LoomWatchError(6, "ffmpeg is not installed or not on PATH.")
+    audio_path = out_dir / "audio.wav"
+    command = [
+        *ffmpeg_base_command(),
+        "-i",
+        audio_input,
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-c:a",
+        "pcm_s16le",
+        str(audio_path),
+    ]
+    try:
+        subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as exc:
+        message = exc.stderr.decode("utf-8", errors="replace").strip()
+        raise LoomWatchError(6, f"ffmpeg audio extraction failed: {message}") from exc
+    return audio_path
+
+
+def multipart_form_data(fields, files):
+    boundary = f"----loom-watch-{uuid.uuid4().hex}"
+    parts = []
+    for name, value in fields:
+        if value is None:
+            continue
+        parts.extend(
+            [
+                f"--{boundary}\r\n".encode("utf-8"),
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"),
+                str(value).encode("utf-8"),
+                b"\r\n",
+            ]
+        )
+    for name, path, content_type in files:
+        filename = Path(path).name
+        parts.extend(
+            [
+                f"--{boundary}\r\n".encode("utf-8"),
+                (
+                    f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'
+                    f"Content-Type: {content_type}\r\n\r\n"
+                ).encode("utf-8"),
+                Path(path).read_bytes(),
+                b"\r\n",
+            ]
+        )
+    parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+    return boundary, b"".join(parts)
+
+
+def openai_transcribe(audio_path, model, language=None, prompt=None):
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise LoomWatchError(4, "OPENAI_API_KEY is required for --openai-transcribe.")
+
+    response_format = "verbose_json" if model == "whisper-1" else "json"
+    fields = [
+        ("model", model),
+        ("response_format", response_format),
+        ("language", language),
+        ("prompt", prompt),
+    ]
+    if response_format == "verbose_json":
+        fields.append(("timestamp_granularities[]", "segment"))
+
+    boundary, body = multipart_form_data(fields, [("file", audio_path, "audio/wav")])
+    request = urllib.request.Request(
+        "https://api.openai.com/v1/audio/transcriptions",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=300) as response:
+            text = response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")[:1000]
+        raise LoomWatchError(4, f"OpenAI transcription failed: HTTP {exc.code}: {body}") from exc
+    except urllib.error.URLError as exc:
+        raise LoomWatchError(4, f"OpenAI transcription failed: {exc}") from exc
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return {"text": text}
+
+
+def cues_from_openai_transcript(transcript, duration):
+    segments = transcript.get("segments") or []
+    cues = []
+    for segment in segments:
+        text = str(segment.get("text") or "").strip()
+        if not text:
+            continue
+        cues.append(
+            {
+                "start": float(segment.get("start") or 0.0),
+                "end": float(segment.get("end") or segment.get("start") or 0.0),
+                "text": text,
+            }
+        )
+    if cues:
+        return cues
+
+    text = str(transcript.get("text") or "").strip()
+    if text:
+        return [{"start": 0.0, "end": duration or 0.0, "text": text}]
+    return []
+
+
+def expand_local_command(template, audio_path, out_dir, language=None):
+    values = {
+        "audio": str(audio_path),
+        "vtt": str(out_dir / "local-transcript.vtt"),
+        "json": str(out_dir / "local-transcript.json"),
+        "txt": str(out_dir / "local-transcript.txt"),
+        "out_dir": str(out_dir),
+        "language": language or "",
+    }
+    quoted = {key: shlex.quote(value) for key, value in values.items()}
+    try:
+        return template.format(**quoted), values
+    except KeyError as exc:
+        raise LoomWatchError(2, f"Unknown placeholder in --local-transcribe-command: {exc}") from exc
+
+
+def local_transcribe(command_template, audio_path, out_dir, language=None):
+    command, paths = expand_local_command(command_template, audio_path, out_dir, language)
+    result = subprocess.run(
+        command,
+        shell=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    (out_dir / "local-transcribe-command.txt").write_text(command + "\n", encoding="utf-8")
+    (out_dir / "local-transcribe-stdout.txt").write_text(result.stdout, encoding="utf-8")
+    (out_dir / "local-transcribe-stderr.txt").write_text(result.stderr, encoding="utf-8")
+    if result.returncode != 0:
+        raise LoomWatchError(
+            4,
+            f"Local transcription command failed with exit code {result.returncode}: {result.stderr.strip()}",
+        )
+
+    vtt_path = Path(paths["vtt"])
+    if vtt_path.exists() and vtt_path.stat().st_size > 0:
+        vtt = vtt_path.read_text(encoding="utf-8", errors="replace")
+        return {"source": "local", "format": "vtt", "vtt": vtt}
+
+    json_path = Path(paths["json"])
+    if json_path.exists() and json_path.stat().st_size > 0:
+        try:
+            data = json.loads(json_path.read_text(encoding="utf-8", errors="replace"))
+            return {"source": "local", "format": "json", **data}
+        except json.JSONDecodeError:
+            pass
+
+    txt_path = Path(paths["txt"])
+    if txt_path.exists() and txt_path.stat().st_size > 0:
+        text = txt_path.read_text(encoding="utf-8", errors="replace").strip()
+        return {"source": "local", "format": "text", "text": text}
+
+    stdout = result.stdout.strip()
+    if stdout:
+        return {"source": "local", "format": "stdout", "text": stdout}
+
+    raise LoomWatchError(
+        4,
+        "Local transcription command succeeded but produced no VTT, JSON, text file, or stdout transcript.",
+    )
+
+
+def resolve_local_whisper_command(args):
+    whisper_cli = shutil.which("whisper-cli")
+    if not whisper_cli:
+        raise LoomWatchError(
+            4,
+            "whisper-cli was not found. Install whisper.cpp first, e.g. `brew install whisper-cpp`.",
+        )
+
+    model_candidates = [
+        args.local_whisper_model,
+        os.environ.get("WHISPER_CPP_MODEL"),
+        str(Path.home() / ".local/share/whisper.cpp/models/ggml-small.bin"),
+        str(Path.home() / ".local/share/whisper.cpp/models/ggml-medium.bin"),
+        str(Path.home() / ".local/share/whisper.cpp/models/ggml-large-v3-turbo.bin"),
+    ]
+    model = next((candidate for candidate in model_candidates if candidate and Path(candidate).exists()), None)
+    if not model:
+        raise LoomWatchError(
+            4,
+            "No whisper.cpp model found. Expected `--local-whisper-model`, `WHISPER_CPP_MODEL`, "
+            "or ~/.local/share/whisper.cpp/models/ggml-small.bin.",
+        )
+
+    gpu_flag = "" if args.local_whisper_gpu else "--no-gpu "
+    return (
+        f"{shlex.quote(whisper_cli)} {gpu_flag}-m {shlex.quote(model)} "
+        "-f {audio} -l {language} -ovtt -of {out_dir}/local-transcript -np"
+    )
+
+
+def vtt_timestamp(seconds):
+    seconds = max(0.0, float(seconds))
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    whole_seconds = int(seconds % 60)
+    millis = int(round((seconds - int(seconds)) * 1000))
+    return f"{hours:02d}:{minutes:02d}:{whole_seconds:02d}.{millis:03d}"
+
+
+def cues_to_vtt(cues):
+    lines = ["WEBVTT", ""]
+    for idx, cue in enumerate(cues, start=1):
+        end = cue["end"] if cue["end"] > cue["start"] else cue["start"] + 1
+        lines.extend(
+            [
+                str(idx),
+                f"{vtt_timestamp(cue['start'])} --> {vtt_timestamp(end)}",
+                cue["text"],
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def nearest_frame(frames, timestamp):
+    if not frames:
+        return None
+    return min(frames, key=lambda frame: abs(frame["timestamp"] - timestamp))
+
+
+def write_manifest(out_dir, video_id, video, transcript_details, cues, frames):
+    manifest_path = out_dir / "manifest.md"
+    props = video.get("video_properties") or {}
+    owner = video.get("owner") or {}
+    duration = duration_seconds(video)
+    title = video.get("name") or video_id
+    lines = [
+        f"# Loom: {title}",
+        "",
+        "## Metadata",
+        "",
+        f"- Video ID: `{video_id}`",
+        f"- Author: {owner.get('display_name') or 'unknown'}",
+        f"- Created: {video.get('createdAt') or 'unknown'}",
+        f"- Duration: {duration:.2f}s",
+        f"- Dimensions: {props.get('width') or '?'}x{props.get('height') or '?'}",
+        f"- Transcript status: {transcript_details.get('transcription_status') or transcript_details.get('error') or 'unavailable'}",
+        f"- Captions found: {'yes' if cues else 'no'}",
+        f"- Frames extracted: {len(frames)}",
+        "",
+        "## How To Read This",
+        "",
+        "Read the transcript timeline first, then open only the frames needed to verify visual claims. If a frame has small text, crop and upscale the relevant area before deciding what it says.",
+        "",
+    ]
+
+    if video.get("description"):
+        lines.extend(["## Loom Description", "", video["description"], ""])
+
+    lines.extend(["## Frame Index", ""])
+    if frames:
+        for frame in frames:
+            rel = frame["path"].relative_to(out_dir)
+            lines.append(f"- `{format_timestamp(frame['timestamp'])}` - [{rel}]({rel})")
+    else:
+        lines.append("- No frames extracted.")
+    lines.append("")
+
+    lines.extend(["## Transcript Timeline", ""])
+    if cues:
+        for cue in cues:
+            frame = nearest_frame(frames, cue["start"])
+            frame_text = ""
+            if frame:
+                rel = frame["path"].relative_to(out_dir)
+                frame_text = f" [frame]({rel})"
+            lines.append(f"- `{format_timestamp(cue['start'])}`{frame_text} - {cue['text']}")
+    else:
+        lines.append("No caption text was available. Use the frame index for visual review.")
+    lines.append("")
+
+    manifest_path.write_text("\n".join(lines), encoding="utf-8")
+    return manifest_path
+
+
+def main():
+    args = parse_args()
+    if args.max_frames < 1:
+        raise LoomWatchError(2, "--max-frames must be at least 1.")
+
+    video_id = extract_video_id(args.url)
+    out_dir = Path(args.out_dir) / video_id
+    manifest = out_dir / "manifest.md"
+    if manifest.exists() and not args.fresh:
+        print(manifest)
+        return 0
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    frames_dir = out_dir / "frames"
+
+    video = fetch_video(video_id)
+    transcript_details = fetch_transcript_details(video_id)
+
+    (out_dir / "metadata.json").write_text(
+        json.dumps({"video": video, "transcript": transcript_details}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    captions_text = ""
+    transcript_json = None
+    if transcript_details.get("captions_source_url"):
+        captions_text = request_text(transcript_details["captions_source_url"], exit_code=4)
+    if transcript_details.get("source_url"):
+        transcript_raw = request_text(transcript_details["source_url"], exit_code=4)
+        try:
+            transcript_json = json.loads(transcript_raw)
+        except json.JSONDecodeError:
+            transcript_json = {"raw": transcript_raw}
+
+    (out_dir / "transcript.vtt").write_text(captions_text or "WEBVTT\n", encoding="utf-8")
+    (out_dir / "transcript.json").write_text(
+        json.dumps(transcript_json or {}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    video_url = fetch_video_url(video_id)
+    if not video_url:
+        raise LoomWatchError(5, "Loom did not expose a playable HLS/MP4 URL.")
+    (out_dir / "video-url.txt").write_text(video_url, encoding="utf-8")
+
+    video_input = prepare_video_input(video_url, out_dir)
+    cues = parse_vtt(captions_text)
+    local_transcribe_command = args.local_transcribe_command
+    if args.local_whisper:
+        local_transcribe_command = resolve_local_whisper_command(args)
+
+    if not cues and (args.openai_transcribe or local_transcribe_command):
+        audio_input = prepare_audio_input(video_url, out_dir)
+        audio_path = extract_audio(audio_input, out_dir)
+        if local_transcribe_command:
+            fallback_transcript = local_transcribe(
+                local_transcribe_command,
+                audio_path,
+                out_dir,
+                language=args.language,
+            )
+            (out_dir / "local-transcript.json").write_text(
+                json.dumps(fallback_transcript, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            if fallback_transcript.get("vtt"):
+                captions_text = fallback_transcript["vtt"]
+                cues = parse_vtt(captions_text)
+            else:
+                cues = cues_from_openai_transcript(fallback_transcript, duration_seconds(video))
+        else:
+            fallback_transcript = openai_transcribe(
+                audio_path,
+                model=args.openai_model,
+                language=args.language,
+                prompt=args.transcription_prompt,
+            )
+            (out_dir / "openai-transcript.json").write_text(
+                json.dumps(fallback_transcript, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            cues = cues_from_openai_transcript(fallback_transcript, duration_seconds(video))
+        if cues:
+            captions_text = captions_text if captions_text and "-->" in captions_text else cues_to_vtt(cues)
+            (out_dir / "transcript.vtt").write_text(captions_text, encoding="utf-8")
+            (out_dir / "transcript.json").write_text(
+                json.dumps(fallback_transcript, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            status_detail = "local_whisper" if args.local_whisper else (
+                "local_fallback" if local_transcribe_command else f"openai_fallback:{args.openai_model}"
+            )
+            transcript_details = {
+                **transcript_details,
+                "transcription_status": status_detail,
+                "language": args.language,
+            }
+
+    frame_times = pick_frame_times(cues, duration_seconds(video), args.max_frames, args.interval)
+    frames = run_ffmpeg(video_input, frames_dir, frame_times)
+    manifest_path = write_manifest(out_dir, video_id, video, transcript_details, cues, frames)
+    print(manifest_path)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except LoomWatchError as exc:
+        print(f"loom-watch: {exc}", file=sys.stderr)
+        raise SystemExit(exc.exit_code)
