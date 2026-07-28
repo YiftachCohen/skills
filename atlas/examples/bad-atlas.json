@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "project": {
+    "name": "This project name is deliberately way past the forty eight character cap",
+    "slug": "Bad_Slug_With_CAPS_and_underscores_and_way_too_long_here",
+    "tagline": "This tagline is intentionally engineered to run well beyond the eighty character maximum allowed",
+    "date": "2026-07-27"
+  },
+  "graph": {
+    "nodes": [
+      {
+        "id": "entry",
+        "label": "This entry label is far longer than twenty eight characters allowed",
+        "kind": "entry",
+        "sub": "this sub text is longer than the forty character limit for sure",
+        "group": "This group name exceeds twenty four characters",
+        "detail": "This detail string is deliberately padded out well past the two hundred character maximum so that the validator raises a warning for the detail field: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sourceRef": "src/very/deeply/nested/path/that/keeps/going/and/going/and/going/past/one/hundred/and/twenty/characters/for/the/sourceref/warning.ts:9999"
+      },
+      {
+        "id": "svc",
+        "label": "Service node",
+        "kind": "service"
+      }
+    ],
+    "edges": [
+      {
+        "from": "entry",
+        "to": "svc",
+        "kind": "calls",
+        "label": "this edge label is far too long past twenty four"
+      }
+    ]
+  }
+}

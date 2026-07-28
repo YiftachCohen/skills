@@ -1,0 +1,65 @@
+{
+  "skill_name": "atlas",
+  "evals": [
+    {
+      "id": 0,
+      "name": "large-nextjs-with-ai",
+      "prompt": "can you atlas the repo at ~/projects/milgapo? i've got a contractor starting next week and i want to hand him one thing that shows how the whole system fits together \u2014 the routes, the crons, where data actually lands, and especially the AI bits since that's what he'll be touching first",
+      "expected_output": "A .atlas/atlas.json plus rendered .atlas/atlas.html for the milgapo repo. Top-level overview of 15-30 nodes covering entry points, scheduled jobs, services, Postgres/stores, external integrations (resend, etc.) and the @ai-sdk/google AI layer with model and tool nodes. sourceRefs point at real files. Containers expand to the full route/schema/feature inventory. Agent reports file paths plus a short summary, does not echo the JSON.",
+      "files": [],
+      "assertions": [
+        "[format] Produced a valid atlas.json in the v2 contract shape",
+        "[format] Passes render.py --check with no errors",
+        "[format] Passes render.py --check with ZERO warnings",
+        "[format] Top-level overview stays in the readable band",
+        "[format] Every edge endpoint is a real node id",
+        "[format] Uses drill-down containers rather than a flat overview",
+        "[format] Rendered a self-contained HTML with no external network refs",
+        "[substance] Surfaces the AI layer this repo actually has",
+        "[substance] Every source path it cites actually exists in the repo",
+        "[substance] Accounts for every third-party service in the dependency manifest",
+        "[substance] Reports back with paths and a summary, without echoing the raw data"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "large-python-pipeline",
+      "prompt": "I need a visual of how scout actually works end to end \u2014 what kicks things off, the background jobs, and where data ends up. it's at ~/projects/scout and it's a big python repo so please don't try to read every file",
+      "expected_output": "An atlas for the scout repo built command-first (listings + greps + manifests, not file-by-file reads). Covers docker-compose services, schema.sql tables, cron/worker entry points, and the google-generativeai layer. Stays inside the node caps despite ~2k source files by merging near-identical items. Should NOT trigger a full file-by-file read of the repo.",
+      "files": [],
+      "assertions": [
+        "[format] Produced a valid atlas.json in the v2 contract shape",
+        "[format] Passes render.py --check with no errors",
+        "[format] Passes render.py --check with ZERO warnings",
+        "[format] Top-level overview stays in the readable band",
+        "[format] Every edge endpoint is a real node id",
+        "[format] Uses drill-down containers rather than a flat overview",
+        "[format] Rendered a self-contained HTML with no external network refs",
+        "[substance] Surfaces the AI layer this repo actually has",
+        "[substance] Every source path it cites actually exists in the repo",
+        "[substance] Accounts for every third-party service in the dependency manifest",
+        "[substance] Reports back with paths and a summary, without echoing the raw data"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "small-flask-app",
+      "prompt": "give me an architecture map of the app in ~/projects/armis so i can see what talks to what",
+      "expected_output": "An atlas for a small flat Flask app (app.py, templates/, app.db). Should scale down gracefully: a modest node count rather than padding to 15+, empty AI kinds if there is no AI layer, and no invented structure. Renders cleanly with zero validation warnings.",
+      "files": [],
+      "assertions": [
+        "[format] Produced a valid atlas.json in the v2 contract shape",
+        "[format] Passes render.py --check with no errors",
+        "[format] Passes render.py --check with ZERO warnings",
+        "[format] Top-level overview stays in the readable band",
+        "[format] Every edge endpoint is a real node id",
+        "[format] Uses drill-down containers rather than a flat overview",
+        "[format] Rendered a self-contained HTML with no external network refs",
+        "[substance] Does NOT fabricate an AI layer the repo lacks",
+        "[substance] Every source path it cites actually exists in the repo",
+        "[substance] Accounts for every third-party service in the dependency manifest",
+        "[substance] Reports back with paths and a summary, without echoing the raw data"
+      ]
+    }
+  ]
+}

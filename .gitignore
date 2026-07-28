@@ -2,3 +2,8 @@
 .local-skills/
 .private-skills/
 tmp/
+
+# atlas local output (never uploaded, regenerate anytime)
+.atlas/
+.gstack/
+atlas-workspace/

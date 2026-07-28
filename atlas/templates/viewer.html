@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%234DE3FF' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6.98 4.97 4.32 10.68M9.02 4.97l2.66 5.71'/%3E%3Cpath d='M5.1 9h5.8'/%3E%3Ccircle cx='8' cy='2.8' r='1.75' fill='%234DE3FF' stroke='none'/%3E%3Ccircle cx='3.3' cy='12.85' r='1.75' fill='%234DE3FF' stroke='none'/%3E%3Ccircle cx='12.7' cy='12.85' r='1.75' fill='%234DE3FF' stroke='none'/%3E%3C/svg%3E">
+<style>
+/*__CSS__*/
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="viewport">
+    <div id="world">
+      <div id="lanes"></div>
+      <svg id="edges"></svg>
+      <div id="groups"></div>
+      <div id="nodes"></div>
+    </div>
+  </div>
+
+  <div class="sheet-frame" aria-hidden="true"></div>
+
+  <header>
+    <div class="title-block">
+      <span class="eyebrow"><svg class="mark" viewBox="0 0 16 16" fill="none"
+        stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+        stroke-linejoin="round" aria-hidden="true"><path d="M6.98 4.97 4.32 10.68M9.02 4.97l2.66 5.71"/><path
+        d="M5.1 9h5.8"/><circle cx="8" cy="2.8" r="1.75" fill="currentColor" stroke="none"/><circle
+        cx="3.3" cy="12.85" r="1.75" fill="currentColor" stroke="none"/><circle cx="12.7" cy="12.85"
+        r="1.75" fill="currentColor" stroke="none"/></svg>Codebase atlas</span>
+      <div class="title-row" id="title-row"><h1 id="proj-name"></h1></div>
+      <p class="tagline" id="proj-tagline"></p>
+    </div>
+    <div class="chips-row" id="chips"><div class="stats" id="stats"></div></div>
+  </header>
+
+  <div class="toolbar">
+    <div class="tb-field">
+      <svg class="mag" viewBox="0 0 16 16" aria-hidden="true">
+        <circle cx="7" cy="7" r="4.6" fill="none" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M10.4 10.4 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+      <input id="search" type="search" placeholder="Search nodes…" spellcheck="false">
+    </div>
+    <button id="show-all" class="primary" style="display:none">✕ Exit focus</button>
+    <span class="tb-sep"></span>
+    <div class="seg">
+      <button id="expand-all" title="Expand every container">Expand</button>
+      <button id="collapse-all" title="Collapse every container">Collapse</button>
+    </div>
+    <span class="tb-sep"></span>
+    <div class="seg">
+      <button id="zoom-out" class="icon" title="Zoom out" aria-label="Zoom out">−</button>
+      <button id="zoom-reset" class="readout" title="Reset zoom to 100%" aria-label="Reset zoom to 100%">100%</button>
+      <button id="zoom-in" class="icon" title="Zoom in" aria-label="Zoom in">+</button>
+      <button id="fit" title="Fit map to screen">Fit</button>
+    </div>
+    <span class="tb-sep"></span>
+    <button id="play" title="Guided tour of each entry point's flow">▶ Play</button>
+    <div class="seg">
+      <button id="motion" title="Animated flow particles &amp; entry pulse">Motion</button>
+      <button id="icons" title="Loads favicons from google.com">Icons</button>
+    </div>
+    <select id="theme-select" title="Visual theme" aria-label="Visual theme">
+      <option value="living">Living</option>
+      <option value="print">Print</option>
+    </select>
+    <span class="tb-sep"></span>
+    <button id="help" type="button" aria-expanded="false" aria-controls="shortcuts"
+            title="Gestures &amp; shortcuts">?</button>
+  </div>
+
+  <div id="shortcuts" hidden>
+    <h4>Gestures</h4>
+    <div class="sc"><b>drag</b><span>pan the map</span></div>
+    <div class="sc"><b>scroll</b><span>zoom · shift-scroll pans sideways</span></div>
+    <div class="sc"><b>click</b><span>open a node's detail</span></div>
+    <div class="sc"><b>double-click</b><span>focus that node's flow</span></div>
+    <div class="sc"><b>kind pill</b><span>filter the map to one kind</span></div>
+    <h4>Keys</h4>
+    <div class="sc"><b>M</b><span>show / hide the minimap</span></div>
+    <div class="sc"><b>Esc</b><span>step back one level</span></div>
+  </div>
+
+  <div id="detail">
+    <button class="close" aria-label="Close">×</button>
+    <div class="kind-row"><span id="d-glyph" style="display:inline-flex"></span><span id="d-kind"></span></div>
+    <h3 id="d-label"></h3>
+    <p id="d-detail"></p>
+    <div class="contains" id="d-contains"></div>
+    <div class="src" id="d-src"></div>
+    <div class="actions">
+      <button id="d-focus">Focus flow</button>
+      <button id="d-discuss">Ask agent…</button>
+      <button id="d-toggle" style="display:none"></button>
+    </div>
+  </div>
+
+  <div id="promptsheet" role="dialog" aria-modal="false" aria-labelledby="ps-title" hidden>
+    <button class="ps-close" aria-label="Close">×</button>
+    <span class="ps-eyebrow">Prompt for your coding agent</span>
+    <h3 id="ps-title"></h3>
+    <div class="ps-scope" role="group" aria-label="How much context to include">
+      <button type="button" data-scope="node" class="on">This node</button>
+      <button type="button" data-scope="flow">Its whole flow</button>
+    </div>
+    <textarea id="ps-text" spellcheck="false" aria-label="Prompt text"></textarea>
+    <div class="ps-foot">
+      <span id="ps-status">Type your question at the end, then copy.</span>
+      <button id="ps-copy" class="primary">Copy prompt</button>
+    </div>
+  </div>
+
+  <div id="titleblock">
+    <button id="mm-toggle" type="button" aria-expanded="true" aria-controls="mm-wrap"
+            title="Collapse minimap (M)">
+      <span>Minimap</span><span class="chev" aria-hidden="true">▾</span>
+    </button>
+    <div id="mm-wrap">
+      <canvas id="minimap"></canvas>
+    </div>
+    <dl class="tb-rows">
+      <div class="tb-row"><dt>Sheet</dt><dd id="tb-sheet">Overview</dd></div>
+      <div class="tb-row"><dt>Nodes</dt><dd id="tb-nodes"></dd></div>
+      <div class="tb-row"><dt>Date</dt><dd id="tb-date"></dd></div>
+    </dl>
+  </div>
+</div>
+
+<script id="scan-data" type="application/json">/*__SCAN_DATA__*/</script>
+<script id="scan-config" type="application/json">/*__SCAN_CONFIG__*/</script>
+<script>
+/*__JS__*/
+</script>
+</body>
+</html>
