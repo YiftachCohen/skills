@@ -16,6 +16,13 @@ Do NOT read files one by one — you will run out of context.
   will touch and fix each one's `kind` (`postgres`, not `neon-db` in one report
   and `db` in another). Reconciling id collisions afterwards costs more than the
   fan-out saves.
+  A subagent has not read this skill, so paste the vocabulary into its prompt:
+  the eight node kinds, the four edge kinds (`calls`/`reads`/`writes`/
+  `triggers`), and the `sourceRef` rule. Left unstated, they invent edge kinds
+  (`uses`, `depends`) and you rewrite every edge by hand — in one run all four
+  came back invalid. Ask each for inventory lines for its own slice too;
+  reconciliation is per-line, and the agent that read the code is the one who
+  knows what it found.
 - **Write in a few appends** rather than one enormous Write call — a 200-node
   graph can exceed the output limit mid-JSON, and a truncated file means
   starting the write over.

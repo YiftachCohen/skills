@@ -98,6 +98,7 @@ don't write them. `project.date` = today.
 | `group` | optional, <=24: nodes sharing a group render as one labeled stack. Group by feature/domain the way a team talks ("Billing"), never by file layout; hub nodes stay ungrouped. The viewer puts a group in its members' median lane, so one spanning kinds pulls nodes out of their semantic column — a real cost, worth paying when the team genuinely names the thing as one unit. No groups at all beats a forced one. |
 | edge `kind` | optional, prefer setting it: `calls`/`reads`/`writes`/`triggers`, revealed on flow trace. Two nodes can have more than one edge — a service that both reads and writes a store gets both, not a compromise label. |
 | edge `label` | optional, <=24, always visible — spend it on the few relationships that would surprise a reader ("charges on trial end"). See the label budget below. |
+| edge `evidence` | optional `path:line` — the call site you read that proves this edge. Records a verification the text heuristic can't repeat (DI, barrel re-exports, generated registries), so `--edges` stops re-flagging it. |
 | `domain` | optional favicon domain, no scheme (openai.com) — only for things a recognizable company owns; use the product domain for models (claude.ai). |
 | `detail` | optional, <=200: one sentence shown on click. |
 | `sourceRef` | repo path plus `:line` (<=120). Treat it as **required for internal nodes** — it feeds jump-to-code and the viewer's "Ask agent…" prompt, and a node without one produces a vague prompt. Rules below. |
@@ -206,6 +207,23 @@ own — an edge is structurally valid as long as both ends are node ids.
 and lists the edges where it found nothing. For each flag, either point at the
 line or move the edge to the node whose file performs it. A clean run isn't a
 proof: it finds edges with no evidence, not edges with the wrong evidence.
+
+A flag is not a verdict. The heuristic reads text, so it cannot see through a DI
+container, a barrel re-export or a generated registry — architectures where
+every true edge is invisible by design. When you have found the call site
+yourself, record it as the edge's `evidence`:
+
+```json
+{ "from": "bookings", "to": "tasker", "kind": "triggers",
+  "evidence": "packages/features/bookings/lib/handleNewBooking.ts:412" }
+```
+
+That ref is itself checked — a path that doesn't exist or a line past the end of
+the file is reported, so `evidence` can't excuse an edge by being vague — and
+the edge stops being re-litigated on every run. Flags marked *inconclusive*
+rather than absent mean the container's directory was too big to scan whole;
+those need the same treatment, and reading them as "no evidence" is how a
+container passes vacuously.
 
 Then verify the rest yourself, as one pass over the finished list — not while
 drafting, so a habit of mind can't carry across ten edges. For each edge open

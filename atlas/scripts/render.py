@@ -231,6 +231,12 @@ def validate(data):
         lbl = e.get("label")
         if isinstance(lbl, str) and len(lbl) > EDGE_LABEL_LIMIT:
             warnings.append(f"edges[{i}] label is {len(lbl)} chars (cap {EDGE_LABEL_LIMIT})")
+        ev = e.get("evidence")
+        if ev is not None and (not isinstance(ev, str) or ":" not in ev):
+            warnings.append(
+                f"edges[{i}] evidence {ev!r} is not a `path:line` ref — it attests "
+                "that you read the performing call site, so it needs the line"
+            )
 
     for key, cap in CAPS.items():
         items = graph.get(key)
@@ -260,8 +266,11 @@ def validate(data):
             if n.get("id") not in visible:
                 warnings.append(
                     f"top-level node {n.get('id')!r} has no edge in the opening view "
-                    "— a floating box reads as unfinished; draw its real relationship "
-                    "or fold it into a related node"
+                    "— a floating box reads as unfinished. Three fixes, in order: "
+                    "draw the relationship it really has (a docs site is built by CI "
+                    "and documents an API); make it a child of the thing it ships "
+                    "with; or, if it shares nothing with the system, leave it off the "
+                    "map and record it in the inventory as omitted"
                 )
 
     labelled = sum(1 for e in edges if e.get("label"))
@@ -313,6 +322,35 @@ def describe_weak_line(text):
                          "};", "});", "]", "[", "else", "try", "end"}:
         return "a bare block-opener"
     return None
+
+
+def describe_ref(ref, repo_root):
+    """Why a `path:line` ref can't be trusted, or None if it lands somewhere real.
+
+    Used for edge `evidence`, which is an attestation that someone read the
+    performing line. An attestation that points nowhere is worth less than no
+    attestation at all, since it reads as verified — so the path, the line
+    number and the line's substance are all checked before the edge is excused.
+    """
+    rel, _, line = ref.partition(":")
+    target = repo_root / rel
+    if not target.exists():
+        return f"does not exist in {repo_root}"
+    if not line:
+        return ("names no line — evidence is a specific call site "
+                "(`path.ts:120`), not a file")
+    if not line.isdigit():
+        return f"has a non-numeric line {line!r}"
+    if not target.is_file():
+        return "points at a directory with a line number"
+    try:
+        lines = target.read_text(errors="replace").splitlines()
+    except OSError:
+        return None
+    if int(line) > max(len(lines), 1):
+        return f"points past the end of the file ({len(lines)} lines)"
+    what = describe_weak_line(lines[int(line) - 1]) if int(line) >= 1 else None
+    return f"lands on {what} line — point at the call itself" if what else None
 
 
 def check_source_refs(nodes, repo_root):
@@ -378,30 +416,38 @@ def check_source_refs(nodes, repo_root):
 
 
 def edge_source(node, repo_root):
-    """The text of the file(s) the node's sourceRef names, or None.
+    """Text of the file(s) the node's sourceRef names, and whether it is partial.
 
-    A container pointing at a directory is checked against everything under it:
-    the claim is about the container, so any member performing it counts.
+    Returns (text, truncated). A container pointing at a directory is checked
+    against everything under it: the claim is about the container, so any member
+    performing it counts. Big directories are capped for speed — and a capped
+    scan that finds nothing has not shown the evidence is absent, only that it
+    was not in the part we read. Reporting "no evidence" there would hand a
+    false clean bill to exactly the containers a monorepo map leans on hardest
+    (`features/bookings` passed vacuously this way), so the caller is told the
+    scan was partial and reports those as inconclusive instead.
     """
     ref = (node.get("sourceRef") or "").partition(":")[0]
     if not ref:
-        return None
+        return None, False
     target = repo_root / ref
-    files = []
+    files, truncated = [], False
     if target.is_file():
         files = [target]
     elif target.is_dir():
-        files = [f for f in sorted(target.rglob("*"))
-                 if f.is_file() and f.suffix in EDGE_SOURCE_EXT][:DIR_FILE_CAP]
+        found = [f for f in sorted(target.rglob("*"))
+                 if f.is_file() and f.suffix in EDGE_SOURCE_EXT]
+        truncated = len(found) > DIR_FILE_CAP
+        files = found[:DIR_FILE_CAP]
     if not files:
-        return None
+        return None, False
     chunks = []
     for f in files:
         try:
             chunks.append(f.read_text(errors="replace"))
         except OSError:
             pass
-    return "\n".join(chunks) if chunks else None
+    return ("\n".join(chunks) if chunks else None), truncated
 
 
 def code_only(text):
@@ -572,9 +618,17 @@ def check_edges(nodes, edges, repo_root):
     the ones with no evidence as a worklist. A flag is not a verdict: an edge
     that is real through a barrel re-export or a DI container will land here
     too. It means *you* have to point at the line, not that the edge is wrong.
+
+    When you have pointed at it, record it as the edge's `evidence` ref
+    (`path.ts:120`) and this stops re-flagging it: the heuristic cannot see
+    through DI or a barrel, but a human or agent who read the line can, and
+    without somewhere to put that finding the same edges are re-litigated on
+    every run. The ref itself is still verified — a wrong path or a line past
+    the end of the file is reported, so `evidence` cannot silence a check by
+    being vague.
     """
     by_id = {n.get("id"): n for n in nodes}
-    findings, checked = [], 0
+    findings, checked, attested, partial = [], 0, 0, 0
     # A hub node is the `from` of many edges, and a container ref can be a whole
     # directory — without this the same files are read once per edge.
     source_cache = {}
@@ -587,10 +641,19 @@ def check_edges(nodes, edges, repo_root):
         # not in a file we could point at.
         if src.get("kind") == "external":
             continue
+        ev = e.get("evidence")
+        if isinstance(ev, str) and ev:
+            bad = describe_ref(ev, repo_root)
+            if bad:
+                findings.append((e, src, f"evidence {ev!r} {bad}"))
+            else:
+                attested += 1
+            continue
         if src.get("id") not in source_cache:
-            blob = edge_source(src, repo_root)
-            source_cache[src.get("id")] = (blob, code_only(blob) if blob else None)
-        blob, code = source_cache[src.get("id")]
+            blob, truncated = edge_source(src, repo_root)
+            source_cache[src.get("id")] = (blob, code_only(blob) if blob else None,
+                                           truncated)
+        blob, code, truncated = source_cache[src.get("id")]
         if blob is None:
             continue
         checked += 1
@@ -643,14 +706,24 @@ def check_edges(nodes, edges, repo_root):
                 why = (f"does not import or name {name_hint(names, 3)}"
                        + ("" if imports else " (and imports nothing)"))
         if why:
-            findings.append((e, src, why))
+            # A capped directory scan that found nothing proves nothing: say so
+            # rather than reporting the absence as a finding the reader can act
+            # on. These need a hand-check or an `evidence` ref, not an edit.
+            if truncated:
+                partial += 1
+                findings.append((e, src, (
+                    f"inconclusive — {src.get('sourceRef')!r} holds more than "
+                    f"{DIR_FILE_CAP} source files and only the first {DIR_FILE_CAP} "
+                    "were scanned; verify at the call site and record an `evidence` ref")))
+            else:
+                findings.append((e, src, why))
 
     warnings = [
         f"edge {e.get('from')} -{e.get('kind') or '?'}-> {e.get('to')}: "
         f"{src.get('sourceRef')} {why}"
         for e, src, why in findings
     ]
-    return warnings, checked, len(findings)
+    return warnings, checked, len(findings), attested, partial
 
 
 def fill(template, values):
@@ -809,12 +882,18 @@ def main():
             warnings.append("--edges needs a repo root to read source from — pass --repo")
         else:
             graph = data.get("graph") or {}
-            edge_warnings, edges_checked, flagged = check_edges(
+            edge_warnings, edges_checked, flagged, attested, partial = check_edges(
                 graph.get("nodes") or [], graph.get("edges") or [], repo_root)
             warnings.extend(edge_warnings)
-            if edges_checked:
+            if edges_checked or attested:
                 edge_note = (f"edges: {edges_checked} checked against the caller's "
                              f"source — {flagged} with no evidence found")
+                if attested:
+                    edge_note += f", {attested} attested by an `evidence` ref"
+                if partial:
+                    edge_note += (f" ({partial} of the {flagged} inconclusive rather "
+                                  "than absent — the container's directory was too "
+                                  "big to scan whole)")
                 if flagged:
                     edge_note += ("; point at the line for each, or move the edge to "
                                   "the node whose file performs it")

@@ -33,6 +33,17 @@ have to point at the line, not that the edge is wrong. Equally, a clean run is
 not a proof: the check finds edges with *no* evidence, not edges with the
 *wrong* evidence, and it cannot see a label that overstates what the line does.
 
+Once you have pointed at the line, put it in the edge's `evidence`
+(`path.ts:120`) and the flag retires: the ref is verified (bad path, missing
+line number, or a line past the end of the file is reported) but the heuristic
+stands down. The run prints how many edges are attested this way.
+
+Flags reading *inconclusive* are different from the rest: the `from` node's
+`sourceRef` is a directory holding more than 40 source files, only the first 40
+were scanned, and nothing was found in that slice. That is not evidence of
+absence — before this was reported, a container over the cap could pass
+vacuously while its edges went unchecked.
+
 ## What the rendered viewer does at runtime
 
 Pan/zoom, hover flow tracing, double-click focus mode, expandable containers,
