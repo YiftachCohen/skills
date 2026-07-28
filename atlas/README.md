@@ -70,11 +70,12 @@ The viewer supports:
   actually touch that control; if storage is unavailable the viewer just stops
   remembering
 
-The skill treats completeness as a discipline: it builds a coverage inventory
-(every dependency, env var, route, schema file, tool) and reconciles the map
-against it, so drill-down containers can account for everything the top-level
-overview summarizes — a repeatable method for "did it cover everything," rather
-than a machine-checked guarantee.
+The skill treats completeness as a discipline: it writes a coverage inventory to
+`.atlas/inventory.md` (every dependency, env var, route, scheduled job, schema
+file, flag-driven mode, tool) and reconciles the map against it line by line, so
+drill-down containers can account for everything the top-level overview
+summarizes — a repeatable method for "did it cover everything," rather than a
+machine-checked guarantee.
 
 The data contract is versioned: `version: 1` files still render correctly, and
 `version: 2` adds the `parent` field for drill-down hierarchy (up to 300 nodes
@@ -95,9 +96,19 @@ python3 atlas/scripts/render.py .atlas/atlas.json --check
 `--check` also verifies that every `sourceRef` resolves to a file that really
 exists, reporting e.g. `190/191 sourceRefs resolve` — so a jump-to-code link the
 agent guessed at surfaces as a warning instead of as a dead link someone finds
-weeks later. The repo root is inferred from the `<repo>/.atlas/atlas.json`
-layout; pass `--repo PATH` if the atlas lives elsewhere, or `--no-source-check`
-to skip.
+weeks later. It goes one step further and checks that the line is worth jumping
+to: a ref landing on a doc comment, a blank line, a bare `const (`, or its own
+parent's line gets flagged with the line to use instead, because that is what a
+line number inferred from nearby context looks like. The repo root is inferred
+from the `<repo>/.atlas/atlas.json` layout; pass `--repo PATH` if the atlas
+lives elsewhere, or `--no-source-check` to skip.
+
+What `--check` deliberately does *not* claim to verify is edges. An edge is
+structurally valid as long as both ends are node ids, so a clean validation run
+says nothing about whether "billing writes to Postgres on trial end" is true.
+The summary line ends by naming how many labelled edges are asserting behaviour
+on your word alone, and the skill instructs the agent to confirm each call site
+rather than infer it from an import.
 
 Install with:
 

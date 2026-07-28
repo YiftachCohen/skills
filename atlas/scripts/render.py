@@ -163,15 +163,39 @@ def infer_repo_root(atlas_path):
     return p.parent.parent if p.parent.name == ".atlas" else None
 
 
+def describe_weak_line(text):
+    """Name why a line is a poor landing spot, or None if it's a real landmark.
+
+    A line number that resolves is not the same as a line number that helps. The
+    ref exists so a reader lands on the thing the node names — the type, the
+    func, the route. Landing on the doc comment above it, a blank line, or the
+    file's bare `const (` opener is what a line number guessed from nearby
+    context looks like, and nothing else in the pipeline can tell the difference.
+    """
+    s = text.strip()
+    if not s:
+        return "a blank"
+    # Comment leaders across the languages an atlas is likely to point at. A
+    # bare '*' catches the continuation lines of a /* */ or docstring block.
+    if s.startswith(("//", "#", "*", "/*", "--", ";", "%", '"""', "'''", "<!--")):
+        return "a comment"
+    # Openers that carry no identifier: the reader still has to go hunting.
+    if s.rstrip(":") in {"const (", "var (", "import (", "type (", "(", ")", "{", "}",
+                         "};", "});", "]", "[", "else", "try", "end"}:
+        return "a bare block-opener"
+    return None
+
+
 def check_source_refs(nodes, repo_root):
-    """Verify every sourceRef points at a file that really exists.
+    """Verify every sourceRef points at a file, and a useful line, that exists.
 
     A sourceRef is a promise: teammates click it to jump to code, and it is fed
     into the node's agent prompt. A plausible-looking path that was never checked
     (an index route that doesn't exist, .ts where the file is .tsx) breaks both,
     and it is invisible unless something verifies it — so this does.
     """
-    warnings, checked, ok = [], 0, 0
+    warnings, checked, ok, weak = [], 0, 0, 0
+    parent_ref = {n.get("id"): n.get("sourceRef") for n in nodes}
     for n in nodes:
         ref = n.get("sourceRef")
         if not isinstance(ref, str) or not ref:
@@ -187,17 +211,56 @@ def check_source_refs(nodes, repo_root):
             continue
         if line.isdigit() and target.is_file():
             try:
-                total = len(target.read_text(errors="replace").splitlines())
+                lines = target.read_text(errors="replace").splitlines()
             except OSError:
-                total = None
-            if total is not None and int(line) > max(total, 1):
-                warnings.append(
-                    f"node {n.get('id')!r} sourceRef {ref!r} points past the end of "
-                    f"the file ({total} lines)"
-                )
-                continue
+                lines = None
+            if lines is not None:
+                if int(line) > max(len(lines), 1):
+                    warnings.append(
+                        f"node {n.get('id')!r} sourceRef {ref!r} points past the end of "
+                        f"the file ({len(lines)} lines)"
+                    )
+                    continue
+                what = describe_weak_line(lines[int(line) - 1]) if int(line) >= 1 else None
+                if what:
+                    weak += 1
+                    # A doc comment sits directly above what it documents, so the
+                    # fix is usually a line or two down. Naming it turns the
+                    # warning into an edit instead of another investigation.
+                    nearest = next(
+                        (i + 1 for i in range(int(line), min(int(line) + 10, len(lines)))
+                         if not describe_weak_line(lines[i])), None)
+                    hint = f" (try :{nearest})" if nearest else ""
+                    warnings.append(
+                        f"node {n.get('id')!r} sourceRef {ref!r} lands on {what} line "
+                        f"— point it at the definition the node names{hint}"
+                    )
+        # A child that reuses its parent's ref adds nothing to click on, and
+        # usually means the child was never located in the source at all.
+        par = n.get("parent")
+        if par and ref and parent_ref.get(par) == ref:
+            weak += 1
+            warnings.append(
+                f"node {n.get('id')!r} sourceRef {ref!r} is identical to its parent "
+                f"{par!r} — find the line where the child itself is defined"
+            )
         ok += 1
-    return warnings, checked, ok
+    return warnings, checked, ok, weak
+
+
+def fill(template, values):
+    """Substitute every placeholder in ONE pass over the template.
+
+    Chained .replace() calls rescan text that was already substituted, so a
+    payload containing another marker would have that marker replaced too — an
+    atlas.json holding the literal config placeholder used to get the config
+    object spliced into the middle of the graph. A single pass makes inserted
+    content inert, whatever it happens to contain.
+    """
+    pattern = re.compile("|".join(re.escape(k) for k in values))
+    # A function replacement is used verbatim: no backslash processing, which
+    # the escaped "<\/" sequences in the payload depend on.
+    return pattern.sub(lambda m: values[m.group(0)], template)
 
 
 def load_template():
@@ -229,11 +292,12 @@ def load_template():
     if "</script" in js:
         sys.exit(f"error: {JS_TEMPLATE} contains a '</script' sequence")
 
-    # Inlined BEFORE the scan data, so atlas content can never be mistaken for a
-    # placeholder. rstrip keeps the sources newline-terminated on disk without
-    # doubling the blank line ahead of the closing tag.
-    return (html.replace(CSS_PLACEHOLDER, css.rstrip("\n"))
-                .replace(JS_PLACEHOLDER, js.rstrip("\n")))
+    # rstrip keeps the sources newline-terminated on disk without doubling the
+    # blank line ahead of the closing tag.
+    return fill(html, {
+        CSS_PLACEHOLDER: css.rstrip("\n"),
+        JS_PLACEHOLDER: js.rstrip("\n"),
+    })
 
 
 def main():
@@ -267,11 +331,20 @@ def main():
     repo_root = Path(args.repo).resolve() if args.repo else infer_repo_root(atlas_path)
     source_note = ""
     if repo_root and not args.no_source_check:
-        ref_warnings, checked, ok = check_source_refs(
+        ref_warnings, checked, ok, weak = check_source_refs(
             (data.get("graph") or {}).get("nodes") or [], repo_root)
         warnings.extend(ref_warnings)
         if checked:
             source_note = f", {ok}/{checked} sourceRefs resolve (path and line)"
+            if weak:
+                source_note += f", {weak} land somewhere unhelpful"
+            # Edges carry the map's claims about behaviour and nothing here can
+            # check one: an edge is valid as long as both ends are node ids.
+            edge_labels = sum(
+                1 for e in (data.get("graph") or {}).get("edges") or [] if e.get("label"))
+            if edge_labels:
+                source_note += (f"; {edge_labels} labelled edges assert behaviour "
+                                "that only you can verify")
 
     for w in warnings:
         print(f"warning: {w}", file=sys.stderr)
@@ -298,7 +371,7 @@ def main():
         "onlineIcons": args.online_icons,
         "atlasPath": rel,
     }).replace("</", "<\\/")
-    html = template.replace(PLACEHOLDER, payload).replace(CONFIG_PLACEHOLDER, config)
+    html = fill(template, {PLACEHOLDER: payload, CONFIG_PLACEHOLDER: config})
 
     out_path = Path(args.out) if args.out else atlas_path.with_name("atlas.html")
     out_path.parent.mkdir(parents=True, exist_ok=True)

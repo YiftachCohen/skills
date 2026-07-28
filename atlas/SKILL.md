@@ -24,17 +24,22 @@ All paths below are relative to the target repo, not to this skill.
 
 ## Steps
 
-1. Investigate the repo (below) and build the JSON contract.
-2. Write it to `.atlas/atlas.json`. Leave the repo's `.gitignore` alone — it's a
+1. Investigate the repo (below) and write the coverage inventory to
+   `.atlas/inventory.md` — one line per item, no prose. It is a working file,
+   not a deliverable: writing it down is what makes the reconciliation below
+   something you did rather than something you meant to do, and on a re-run it
+   shows what the repo grew since last time.
+2. Build the JSON contract, reconciling it against every inventory line.
+3. Write it to `.atlas/atlas.json`. Leave the repo's `.gitignore` alone — it's a
    tracked file, and whether the map gets committed is the user's call, not
    yours. Note in your summary that `.atlas/` is currently untracked so they can
    ignore or commit it deliberately.
-3. Render: `python3 <skill-dir>/scripts/render.py .atlas/atlas.json --open` —
+4. Render: `python3 <skill-dir>/scripts/render.py .atlas/atlas.json --open` —
    writes `.atlas/atlas.html` and opens it. Drop `--open` when there's no
    browser to open (headless, CI, a sandboxed run); the file is written either
    way. On a validation error, fix the JSON and re-run.
-4. Tell the user where both files live and what the map shows. Re-running
-   overwrites the same files — safe to repeat as the repo evolves.
+5. Tell the user where the files live and what the map shows. Re-running
+   overwrites them — safe to repeat as the repo evolves.
 
 ## Working efficiently
 
@@ -46,6 +51,11 @@ Investigation is where your context goes — spend it deliberately:
 - While iterating on the JSON, validate with `--check` (instant, writes
   nothing) and fix findings with targeted edits, not full rewrites; render
   with `--open` once, at the end.
+- Know what `--check` can't do. It checks nodes — shapes, caps, and that every
+  `sourceRef` lands on a real file and a line worth landing on. It cannot check
+  an edge: an edge is structurally valid as long as both ends are node ids, so
+  "166/166 sourceRefs resolve" says nothing about the 97 claims your edges make.
+  Edges are where a map misleads, and verifying them is entirely on you.
 - On a re-run, read the existing `.atlas/atlas.json` and update it — check
   what changed (git log/diff) instead of re-scanning the whole repo.
 - Report to the user with the file paths and a few summary lines (counts,
@@ -64,20 +74,39 @@ enumerate a container's full contents — every admin section, route group, sche
 cluster, agent tool. The viewer renders containers collapsed with a `+N` badge,
 expanding in place.
 
-Before writing the map, build a coverage inventory — a compact checklist
-(one line per item, assembled from manifests and greps, not prose):
+Before writing the map, write the coverage inventory to `.atlas/inventory.md` —
+a compact checklist (one line per item, assembled from manifests and greps, not
+prose). Keeping it in your head is how a scheduled job or a whole flag-driven
+mode goes missing without anything registering that it did:
 
 - every dependency in the package manifest (grouped; 30 UI packages = 1 line)
-- every env var (`.env.example`, an env schema, or `process.env` grep)
-- every route/entry directory, every scheduled job
+- every env var (`.env.example`, an env schema, or a `process.env`/`os.Getenv`
+  grep) — flag the ones that change behaviour the map draws, like an escape
+  hatch that disables a validation step you drew as a security control
+- every route/entry directory, every scheduled job (including CI `schedule:`)
 - every schema/model file and its tables
 - every internal service/feature module
+- **the largest non-test source files, by line count** — every other line here
+  is organised by category, and a category sweep silently skips a big file
+  sitting in a package you already ticked off ("internal/cmd → the command nodes
+  above"). Sorting by size finds it:
+  `git ls-files '*.ext' | grep -v test | xargs wc -l | sort -rn`
+  Walk down the list checking each against the map and stop when several
+  consecutive files in a row are ones you would fairly omit — not at a fixed
+  count. The cutoff is where the list goes quiet, and it is usually further down
+  than feels necessary: in one 140-file repo the two biggest misses sat at ranks
+  25 and 29, well past any round number you would have picked in advance.
+- every mode a flag unlocks — a `--changed`/`--watch`/`--dry-run` that takes a
+  different code path is a branch of the system, not a flag
+- the machine-facing contract, where there is one: exit codes, output files,
+  report formats that CI consumes
 - every AI agent, model id, and tool definition
 
 Reconcile: each inventory item must appear in the map — as a node, a child,
 or named in a node's `sub`/`detail` ("+ Google Maps geocoding") — or be
-omittable in one sentence (dead code, pure UI libraries). Done means: a new
-engineer clicking through every container sees nothing missing.
+omittable in one sentence (dead code, pure UI libraries). Say which it was, in
+one word, next to the line. Done means: a new engineer clicking through every
+container sees nothing missing.
 
 ## How to investigate
 
@@ -110,12 +139,39 @@ and schemas — manifests and grep hits answer most of the map.
   `tool({...})` definitions, MCP servers. Identify each model's provider and
   the tools models can call.
 - Repos with no AI scan just as well — leave the AI kinds empty.
+- Scheduled work hides in CI. Grep `.github/workflows/` (or the equivalent) for
+  `schedule:`/`cron` before concluding a repo has no `cron` nodes — a nightly
+  job or a daily self-scan is a real actor even when no application code
+  schedules anything.
+- An import is not a call, and a package is not a symbol. Every edge asserts that
+  A does something to B, and a confidently-labelled edge that isn't real is the
+  one error a reader cannot detect — it looks exactly like the true ones. Grep
+  the call site and read *which exported name* is called: a utility package
+  routinely exports both the thing you assumed and a far smaller thing everyone
+  actually uses (a retrying client and a bare transport; a path sanitiser and a
+  plain join). Get that wrong once and you write the same wrong edge five times,
+  because every importer looks alike from the import block. Name the function in
+  your head before you draw the arrow.
 - Shared infrastructure (a db connection module, a logger, a config loader)
   touches everything; drawing every true edge buries the story the map exists to
-  tell. Give it one node and only the edges that are load-bearing.
+  tell. Give it one node and only the edges that are load-bearing. Treat arrows
+  *into* that node as the highest-risk claims on the map — it is the box whose
+  contents everyone assumes and nobody checks, so it attracts edges drawn from
+  theme rather than fact. Verify each one or leave it out.
+- Attribute behaviour to the code that performs it, not to the thing the user
+  thinks of. A wrapper that people invoke (a composite action, a CLI front-end,
+  a facade) is constantly credited with work that actually lives one layer away
+  in the caller or the callee — the config load that happens in the command
+  rather than the engine, the upload that happens in the workflow rather than
+  the action it calls. When a node's `detail` describes a step, confirm that
+  step is in the file the node's `sourceRef` points at.
 - When docs and code disagree, map the code and say so in your summary. READMEs
   and CLAUDE.md drift, and a subsystem that exists only in documentation doesn't
-  belong on a map of how the thing actually works.
+  belong on a map of how the thing actually works. This holds inside a sentence
+  too: if a doc is your only source for a mechanism ("streams uploads through
+  io.Pipe"), grep for it before repeating it. A stale detail copied into a
+  node's `detail` inherits the doc's authority and outlives the doc — and it is
+  a special trap when you have already noticed that file is out of date.
 
 ### Large repos (500+ real source files, measured)
 
@@ -225,7 +281,11 @@ write them.
 - Edge `kind` (optional, prefer setting it): `calls`|`reads`|`writes`|`triggers`,
   revealed on flow trace. Add a `label` (always visible, <=24) only when a
   specific phrase says more — put the business logic on edges ("charges on
-  trial end").
+  trial end"). Labels never fade, so they compete with each other and with the
+  edges underneath: past roughly one label per four edges the map opens as a
+  thicket of grey text at fit-zoom, legible only once you zoom in. Let `kind`
+  carry the ordinary relationships and spend labels on the few that would
+  surprise a reader.
 - `domain` (optional): favicon domain, no scheme (openai.com, exa.ai) — only
   for things a recognizable company/product owns; omit for internal nodes.
   Use the product domain for models (claude.ai, gemini.google.com). Favicons
@@ -238,9 +298,13 @@ write them.
   `detail` hands the next agent a usable starting point; one without them
   produces a vague prompt. Treat them as required for internal nodes. Use a path
   you actually saw — don't infer one from a naming pattern (`.ts` when the file
-  is `.tsx`, an index route that doesn't exist). `--check` verifies every
-  sourceRef against the repo and reports how many resolve, so a guess surfaces
-  as a warning rather than as a dead link a teammate finds later.
+  is `.tsx`, an index route that doesn't exist). Point at the definition the
+  node names — the type, the func, the route — not the doc comment above it, not
+  the file's bare `const (`, and never the same line as the node's parent (a
+  child sharing its parent's ref is a child you never actually located).
+  `--check` verifies every sourceRef against the repo and flags those three
+  cases with the line to use instead, so a guess surfaces as a warning rather
+  than as a dead link a teammate finds later.
 - Labels <= 28 chars, `sub` <= 40. Edge `from`/`to` must be existing node
   ids; ids unique. `project.date` = today.
 
@@ -256,9 +320,10 @@ python3 scripts/render.py .atlas/atlas.json [--open] [--check] [-o out.html]
 ```
 
 `--check` validates without writing, including confirming that every `sourceRef`
-resolves to a real file (it finds the repo automatically from the
-`<repo>/.atlas/atlas.json` layout; pass `--repo` if the atlas lives elsewhere,
-or `--no-source-check` to skip). `--theme print` is a bright editorial
+resolves to a real file and to a line worth jumping to — it flags refs that land
+on a comment, a blank, or a bare block opener, and names the line to use instead
+(it finds the repo automatically from the `<repo>/.atlas/atlas.json` layout;
+pass `--repo` if the atlas lives elsewhere, or `--no-source-check` to skip). `--theme print` is a bright editorial
 theme for embeds/printing (default `living`: near-black, animated). The
 rendered viewer handles the rest at runtime — pan/zoom, hover flow tracing,
 double-click focus mode, expandable containers, search (matches hidden
