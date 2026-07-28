@@ -107,15 +107,30 @@ It also reports the top-level node count (the number the caps are about, not
 just the total), and warns when more than one edge in four carries a label —
 labels never fade, so past that density the map opens as a thicket of text.
 
-What `--check` deliberately does *not* claim to verify is edges. An edge is
-structurally valid as long as both ends are node ids, so a clean validation run
-says nothing about whether "billing writes to Postgres on trial end" is true.
-So it prints the labelled edges as a worklist and ends by naming how many of
-them assert behaviour on your word alone; the skill makes confirming each one at
-a call site a required step rather than a suggestion. Across a 7-repo blind
-evaluation, three quarters of the wrong edges were off by exactly one hop — the
-caller, the callee, or a sibling in the same directory — and every one of them
-looked correct from the import block.
+`validate()` cannot fault an edge: one is structurally valid as long as both
+ends are node ids, so a clean run says nothing about whether "billing writes to
+Postgres on trial end" is true. Across a 7-repo blind evaluation, three quarters
+of the wrong edges were off by exactly one hop — the caller, the callee, or a
+sibling in the same directory — and every one of them looked correct from the
+import block. `--edges` goes after that class:
+
+```bash
+python3 atlas/scripts/render.py .atlas/atlas.json --check --edges
+```
+
+For each edge it opens the `from` node's own file and asks the question a
+reviewer would ask for that target kind — does this file reach a database at
+all, does it import that module, does it name that URL, does it mention that
+SDK — ignoring comments and docstrings, because an arrow copied out of an
+architecture diagram is one of the two ways wrong edges get drawn. Edges where
+nothing could have performed the claim come back as a worklist to fix or
+justify. On a re-check of three previously-shipped maps it flagged 4 of 34 edges
+on one (all four were real misattributions: pure functions credited with their
+driver's queries, and a funnel that existed only in a docstring), 0 of 25 on
+another, and 37 of 172 on a large Next.js app whose page shells had been
+credited with their content components' writes. A flag is not a verdict — an
+edge that is real through a barrel re-export or a DI container lands here too —
+but it turns "verify 172 claims by hand" into "justify 37".
 
 Reconcile the coverage inventory against the map:
 

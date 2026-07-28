@@ -1,11 +1,12 @@
 {
   "skill_name": "atlas",
-  "notes": "Assertions marked [substance]/[coverage] encode failures observed in a 7-map blind evaluation (2026-07-28): 44 wrong edges out of 400 verified, 75% of them off by exactly one hop from the import block. The [format] block is largely machine-checkable via render.py --check --inventory; the rest needs an adversarial reader with the repo open. `baseline` records what the skill actually scored on that run, so a later change can be compared rather than guessed at.",
+  "notes": "Assertions marked [substance]/[coverage] encode failures observed in a 7-map blind evaluation (2026-07-28): 44 wrong edges out of 400 verified, 75% of them off by exactly one hop from the import block. The [format] block is largely machine-checkable via render.py --check --edges --inventory; the rest needs an adversarial reader with the repo open. --edges was added after that evaluation: on a re-check of the iteration-3 maps it flagged 4/34 edges on scout (all four were the ground-truth misattributions), 0/25 on armis, and 37/172 on milgapo. `baseline` records what the skill actually scored on that run, so a later change can be compared rather than guessed at.",
   "shared_assertions": [
     "[format] Produced a valid atlas.json in the v2 contract shape",
     "[format] Passes render.py --check with no errors",
     "[format] Passes render.py --check with ZERO warnings — including weak sourceRefs (comment/blank/parent-duplicate lines) and the label-ratio cap",
     "[format] Wrote .atlas/inventory.md, and --inventory reports 0 unreconciled items",
+    "[format] Ran render.py --edges and fixed or justified every flagged edge — a flag left unaddressed is an unverified claim; on the scout map all 4 flags were real misattributions",
     "[format] Every edge endpoint is a real node id",
     "[format] Uses drill-down containers rather than a flat overview",
     "[format] Edge labels stay at or under 1 per 4 edges",
@@ -18,6 +19,7 @@
     "[coverage] Accounts for the machine-facing contract: exit codes, output artifacts, report formats, unauthenticated routes, fail-open vs fail-closed",
     "[coverage] Every non-test file in the top 30 by line count is represented somewhere",
     "[substance] Every source path it cites actually exists in the repo",
+    "[format] Kind discipline holds: `service` marks runtime subsystems of the product's own work — UI trees are `entry` children, build/CI hangs off its trigger kind, third-party products written to are `external`, shared libraries fold into callers or one hub node (observed failure: 69-70% of all nodes filed as `service` in the two largest maps; --check warns past 60%)",
     "[substance] Reports back with paths and a summary, without echoing the raw data"
   ],
   "evals": [
@@ -98,7 +100,8 @@
         "[coverage] Represents the agent backend factory / driver / event-adapter layer",
         "[coverage] Represents token and cost accounting",
         "[coverage] Represents mini-agent mode and thinking levels, or omits them deliberately",
-        "[format] Package groups are used because packages are separately owned and deployed — not as a way to group by directory"
+        "[format] Package groups are used because packages are separately owned and deployed — not as a way to group by directory",
+        "[format] The renderer's UI tree is `entry` children and the shared UI kit is one node — not ~20 `service` nodes; the header's service count reflects genuine runtime subsystems (baseline: 152 of 220 nodes were `service`, 69%)"
       ]
     },
     {
@@ -117,13 +120,28 @@
         "[format] Container nodes over a directory point at the directory, not at one member's file",
         "[format] The build/release/CI/test tier gets nodes rather than being dropped entirely"
       ]
+    },
+    {
+      "id": 6,
+      "name": "monorepo-legibility",
+      "prompt": "shallow-clone https://github.com/calcom/cal.com and atlas it — I'm going to hand the map to two new hires, so it has to be readable, not just complete. ~4,500 real source files: apps/web, apps/api, ~20 packages, and an app-store package with 150+ integration apps",
+      "expected_output": "An atlas whose OPENING view survives the legibility harness (evals/legibility/): stats.py clean or with justified warnings, screenshots a vision grader scores legible per the comprehension.md rubric, and a cold reader scoring >= 12/16 with zero legibility gaps on flow-trigger questions. cal.com is public, so this eval is reproducible anywhere; a local clone may be substituted for the URL to skip the download.",
+      "files": [],
+      "assertions": [
+        "[legibility] stats.py reports no hub over 12 visible edges at open, or the run prunes theme-drawn edges rather than shipping the hairball",
+        "[legibility] Opening-view label ratio stays under 25% AFTER edge merging — the raw-edge cap in --check is not the binding one (iteration-3 milgapo: 29% raw became 53% at open)",
+        "[legibility] A vision grader reading overview-*.png confirms the four lanes are discernible and names no hairball region",
+        "[legibility] A cold reader with only the atlas scores >= 12/16 on the comprehension exam, with zero legibility gaps (information present on the map but not findable) on flow-trigger questions",
+        "[format] The 152-app app-store package is handled as the repeating shape it is — containers with representative children, not 150 top nodes and not one opaque box",
+        "[format] Package groups are used only for separately-owned packages; per-package containers keep the top level within the 40 cap without flattening apps/web to one node",
+        "[substance] Edges crossing a package boundary are verified individually — barrel re-exports and same-named files across packages are the known failure mechanism"
+      ]
     }
   ],
   "untested": [
     "The re-run path: every eval above is a cold start, so 'read the existing atlas.json and update it' has never executed. Needs a repo mapped, then ~30 commits that add a route, delete a service and rename a table, then a second run scored on whether the deleted service disappears.",
     "Statically-typed compiled languages with indirect dispatch (Go interfaces, Java/Spring DI, C#/.NET). Every eval repo is TypeScript or Python, where imports are textual — the 'grep the call site' procedure may have no call site to grep.",
-    "The rendered map. No runner opens the HTML, so the label budget, group lane placement and container legibility are enforced blind.",
-    "Usefulness as distinct from truth. Needs a reader who has never seen the repo answering timed questions from the map alone.",
-    "Multi-repo systems. The armis-cli ↔ armis-appsec-mcp seam produced real contradictions; the contract has no way to mark a node as another repo's surface."
+    "Multi-repo systems. The armis-cli ↔ armis-appsec-mcp seam produced real contradictions; the contract has no way to mark a node as another repo's surface.",
+    "Legibility at monorepo scale now HAS a harness (evals/legibility/: stats.py, screenshot.py, comprehension.md) and eval 6 above — but no iteration has run it yet, and the stats.py thresholds are calibrated on three repos' worth of eyeballing."
   ]
 }

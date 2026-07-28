@@ -6,278 +6,52 @@ description: |
 
 # Atlas (local codebase map)
 
-Analyze a repository and produce a local, interactive atlas — a map of how the
-codebase works: entry points, services, data flow, integrations, plus the AI
-layer (agents, models, tools) when the repo has one — one facet, not the
-point. You produce only the data (a small JSON object); a fixed renderer
-draws the map. Write no HTML or CSS. Nothing is uploaded anywhere: the output
-is a single self-contained HTML file on disk.
-
-## Target repo
-
-1. An explicit path or repo name in the request — resolve it and confirm it
-   exists before starting.
-2. A git URL — shallow-clone it (`--depth 1`) to a temp directory.
-3. Otherwise, the current working directory.
-
-All paths below are relative to the target repo, not to this skill.
+Analyze a repository and produce a local, interactive atlas — entry points,
+services, data flow, integrations, plus the AI layer when the repo has one. You
+produce only the data (a small JSON object); a fixed renderer draws the map.
+Write no HTML or CSS. Nothing is uploaded: the output is a single self-contained
+HTML file on disk.
 
 ## Steps
 
-1. Investigate the repo (below) and write the coverage inventory to
-   `.atlas/inventory.md` — one line per item, no prose. It is a working file,
-   not a deliverable: writing it down is what makes the reconciliation below
-   something you did rather than something you meant to do, and on a re-run it
-   shows what the repo grew since last time.
-2. Build the JSON contract, reconciling it against every inventory line.
-3. Verify every edge, as one pass over the finished list — not while drafting,
-   so a habit of mind can't carry across ten edges. For each edge open the file
-   the `from` node's `sourceRef` names and find the line that performs the
-   claim: an import of the exact symbol *plus* a call to it, a query naming the
-   exact table, a fetch or spawn of the exact path. If the performing line lives
-   in another file, the edge belongs to that file's node. Grep every route path,
-   table name and exported symbol you asserted. Three quarters of the wrong
-   edges this skill has produced were off by exactly one hop — the caller, the
-   callee, or a sibling in the same directory — and every one of them looked
-   correct from the import block.
-4. Write it to `.atlas/atlas.json`. Leave the repo's `.gitignore` alone — it's a
-   tracked file, and whether the map gets committed is the user's call, not
-   yours. Note in your summary that `.atlas/` is currently untracked so they can
-   ignore or commit it deliberately.
-5. Render, with absolute paths and `--repo` naming the repo the refs are
-   relative to, so the command is correct from any working directory:
-   `python3 /abs/path/to/skill/scripts/render.py /abs/repo/.atlas/atlas.json --repo /abs/repo --open`
-   — writes `.atlas/atlas.html` and opens it. Drop `--open` when there's no
-   browser to open (headless, CI, a sandboxed run); the file is written either
-   way. On a validation error, fix the JSON and re-run.
-6. Tell the user where the files live and what the map shows. `atlas.html` is
-   renderer output — always safe to delete and regenerate. `atlas.json` is
-   yours: re-running does not overwrite it for you, and a tool that refuses to
-   write a file it hasn't read will block you. If you were asked for a fresh
-   scan, or you can't tell how old the existing map is, `rm .atlas/atlas.json
-   .atlas/atlas.html` first and write clean; take the incremental path in
-   "Working efficiently" only when you are deliberately updating a map you trust.
+1. **Resolve the target repo**: an explicit path or repo name in the request
+   (confirm it exists), a git URL (shallow-clone it, `--depth 1`, to a temp
+   directory), or the current working directory. All paths below are relative to
+   the target repo, not to this skill.
+2. **Measure and investigate** — see "Investigating" below.
+3. **Write the coverage inventory** to `.atlas/inventory.md` — one line per
+   item, no prose. A working file, not a deliverable.
+4. **Write the map** to `.atlas/atlas.json` in the contract shape below,
+   reconciling it against every inventory line. Leave the repo's `.gitignore`
+   alone — whether the map gets committed is the user's call; note in your
+   summary that `.atlas/` is untracked so they can decide deliberately.
+5. **Check it**, and fix what comes back. Instant, writes nothing:
+   ```bash
+   python3 /abs/path/to/skill/scripts/render.py /abs/repo/.atlas/atlas.json \
+     --repo /abs/repo --check --edges --inventory
+   ```
+   Use targeted edits, not full rewrites, and re-run until it is clean.
+   `evals/legibility/stats.py` additionally measures the *opening* view (hub
+   fan-out, drawn-edge density, label ratio after containers collapse) — worth
+   running on anything large.
+6. **Render** once, at the end:
+   ```bash
+   python3 /abs/path/to/skill/scripts/render.py /abs/repo/.atlas/atlas.json \
+     --repo /abs/repo --open
+   ```
+   Drop `--open` when there's no browser (headless, CI, a sandboxed run); the
+   file is written either way.
+7. **Report** the file paths and a few summary lines — counts, main flows,
+   anything surprising. Don't echo the JSON back. `atlas.html` is renderer
+   output, always safe to delete and regenerate; `atlas.json` is yours.
 
-## Working efficiently
+Re-running does not overwrite `atlas.json` for you. Default to a clean scan:
+`rm .atlas/atlas.json .atlas/atlas.html` first. Take the incremental path — read
+the existing map and check `git log`/`git diff` since `project.date` rather than
+re-scanning — only when that date is recent and you wrote the map yourself.
 
-Investigation is where your context goes — spend it deliberately:
-
-- Never read the viewer sources (`templates/viewer.html`, `viewer.css`,
-  `viewer.js`) or the rendered `.atlas/atlas.html`: all are fixed, and the CLI
-  prints everything you need (validation errors/warnings, output path).
-- While iterating on the JSON, validate with `--check` (instant, writes
-  nothing) and fix findings with targeted edits, not full rewrites; render
-  with `--open` once, at the end.
-- Know what `--check` can't do. It checks nodes — shapes, caps, and that every
-  `sourceRef` lands on a real file and a line worth landing on. It cannot check
-  an edge: an edge is structurally valid as long as both ends are node ids, so
-  "166/166 sourceRefs resolve" says nothing about the 97 claims your edges make.
-  Edges are where a map misleads, and verifying them is entirely on you.
-- On a re-run, read the existing `.atlas/atlas.json` and update it — check
-  what changed (git log/diff) instead of re-scanning the whole repo.
-- Report to the user with the file paths and a few summary lines (counts,
-  main flows, anything surprising) — don't echo the JSON back.
-
-## Coverage — the map must account for everything
-
-Two levels: the TOP LEVEL is the picture a staff engineer draws on a whiteboard
-— as many nodes as the system genuinely has things worth naming out loud. In
-practice that lands near 10 for a small app and near 30 for a large product, but
-those are observations, not targets. The only hard number is the ceiling of 40
-below: a map that stops at 34 because 34 is what the system has is finished, not
-short, and there is nothing to agonise over between 34 and 39. Completeness
-lives in `children` (nodes with `parent` set) that
-enumerate a container's full contents — every admin section, route group, schema
-cluster, agent tool. The viewer renders containers collapsed with a `+N` badge,
-expanding in place.
-
-Before writing the map, write the coverage inventory to `.atlas/inventory.md` —
-a compact checklist (one line per item, assembled from manifests and greps, not
-prose). Keeping it in your head is how a scheduled job or a whole flag-driven
-mode goes missing without anything registering that it did:
-
-- every dependency in the package manifest (grouped; 30 UI packages = 1 line)
-- every env var (`.env.example`, an env schema, or a `process.env`/`os.Getenv`
-  grep) — flag the ones that change behaviour the map draws, like an escape
-  hatch that disables a validation step you drew as a security control
-- every route/entry directory, every scheduled job (including CI `schedule:`)
-- every schema/model file and its tables
-- every internal service/feature module
-- **the largest non-test source files, by line count** — every other line here
-  is organised by category, and a category sweep silently skips a big file
-  sitting in a package you already ticked off ("internal/cmd → the command nodes
-  above"). Sorting by size finds it:
-  `git ls-files '*.ext' | grep -v test | xargs wc -l | sort -rn`
-  Walk down until files drop below ~300 lines, or until the list turns into one
-  repeating shape (leaf UI components, generated clients, fixtures) — then stop,
-  ticking that shape off once. Don't stop at a round rank: in one 140-file repo
-  the two biggest misses sat at 25 and 29. But don't keep walking a list that has
-  already ended, either — in a single-file app it ends at rank 3, and in a
-  component-heavy UI repo it never goes quiet at all. If one repeating shape
-  dominates twenty consecutive ranks, that shape is itself a finding: it is where
-  most of the code lives, and it probably deserves more than the single node you
-  were about to give it.
-- every mode a flag unlocks — a `--changed`/`--watch`/`--dry-run` that takes a
-  different code path is a branch of the system, not a flag
-- the machine-facing contract — everything a caller depends on that is not a
-  function signature, and the axis maps miss most. Exit codes (check the success
-  branch actually *can* return non-zero: `return 0 if count >= 0 else 1` never
-  fails), output files and report formats, the wire format of each response (one
-  `detect_types` flag made a column serialise three different ways across three
-  endpoints), the status a rejection returns and which layer returns it
-  (framework middleware answers 400 before your handler runs), which routes are
-  unauthenticated, the lifecycle of any gate token you draw (something writes it
-  — what deletes it?), whether each enforcement surface fails open or closed
-  rather than the two you happened to read, in-database functions the app
-  compiles queries against, OS-level contracts (an App Group identifier, a
-  background-mode entitlement), and any token/cost accounting
-- every AI agent, model id, and tool definition
-
-Reconcile: each inventory item must appear in the map — as a node, a child, or
-named in a node's `sub`/`detail` ("+ Google Maps geocoding") — or be omittable
-in one sentence (dead code, pure UI libraries). Record the disposition on the
-line itself, naming the node **id in backticks**, so the claim can be checked
-rather than believed:
-
-```markdown
-- `scan repo [path]` — child `cmd-scan-repo`
-- `ARMIS_LOCAL_S3_ENDPOINT` relaxes the SSRF check — detail on `api-ssrf`
-- go-git gitignore matcher — sub on `scanrepo`
-- `completion`, `help` — omitted: cobra boilerplate, no architectural consequence
-```
-
-Not `— node (route trees)` or `— mapped`: a disposition that doesn't name an id
-reads as reconciliation without being it, and it is how a whole subsystem goes
-missing from a map whose inventory looked complete. `--inventory` reads these
-back, verifies every id exists, and counts what was never dispositioned at all:
-
-```bash
-python3 <skill-dir>/scripts/render.py .atlas/atlas.json --check --inventory
-# inventory: 83 items — 73 mapped, 10 omitted, 0 unreconciled
-```
-
-Anything other than 0 unreconciled means the reconciliation is unfinished. Done
-means: a new engineer clicking through every container sees nothing missing.
-
-## How to investigate
-
-Measure first, because file trees lie. Vendored directories (`node_modules`,
-`.venv`, `vendor`, `dist`, `.next`, `build`) routinely outnumber real source
-50:1, and the user's own description ("it's a big python repo") is a guess too.
-Count only what you would actually read:
-
-```bash
-git ls-files | grep -E '\.(ts|tsx|js|jsx|py|go|rb|rs|java|swift|kt|m|cs|php)$' \
-  | grep -vE '(^|/)(tests?|__tests__|spec|fixtures|locales)/|\.(test|spec)\.' | wc -l
-```
-
-(or `find` with vendored directories pruned, if it isn't a git repo). Excluding
-tests and fixtures matters: one 1,243-file repo was a third tests and
-translation strings, which pushed the run into the large-repo branch it didn't
-need. Keep `.swift`/`.kt`/`.m`/`.cs` in — a mobile repo whose native half you
-never counted is a system you never saw.
-
-Branch on the measured number, not the impression:
-
-- **under ~20 files**: read every one end to end, then go straight to the
-  coverage contract. Skip the largest-files sweep, the subagent fan-out and the
-  500+ section entirely — all dead weight at this size. When the whole system is
-  one file, the top level is its *concepts*, not its functions: five or six nodes
-  a teammate would say out loud ("routes", "storage", "auth") beat one node per
-  helper, and landing under 10 is finished, not short. A 166-line app does not
-  have 15 things worth naming.
-- **20–500**: command-first, below.
-- **500+**: the large-repo section below.
-
-Then work command-first at every repo size: directory listings for structure,
-grep for locations, and open only the files that define agents, tools, services,
-and schemas — manifests and grep hits answer most of the map.
-
-- Main flows first: entry points (routes, webhooks, pages, CLIs), scheduled
-  jobs (crons/queues/workers), and the stores/services they read and write.
-- Business logic: the internal services/pipelines the product is built from
-  (billing, ingestion, domain services) — these become `service` nodes, with
-  the interesting sentence on the edge ("charges Stripe on trial end").
-- External integrations (payments, email, auth, analytics).
-- Then the AI layer, if any: `generateText`/`streamText`/`generateObject`,
-  `@ai-sdk/*` providers, Anthropic/OpenAI SDK clients, agent loops,
-  `tool({...})` definitions, MCP servers. Identify each model's provider and
-  the tools models can call.
-- Repos with no AI scan just as well — leave the AI kinds empty.
-- Scheduled work hides in CI. Grep `.github/workflows/` (or the equivalent) for
-  `schedule:`/`cron` before concluding a repo has no `cron` nodes — a nightly
-  job or a daily self-scan is a real actor even when no application code
-  schedules anything.
-- An import is not a call, and a package is not a symbol. Every edge asserts that
-  A does something to B, and a confidently-labelled edge that isn't real is the
-  one error a reader cannot detect — it looks exactly like the true ones. Grep
-  the call site and read *which exported name* is called: a utility package
-  routinely exports both the thing you assumed and a far smaller thing everyone
-  actually uses (a retrying client and a bare transport; a path sanitiser and a
-  plain join). Get that wrong once and you write the same wrong edge five times,
-  because every importer looks alike from the import block. Name the function in
-  your head before you draw the arrow. Two variants recur: a barrel file that
-  re-exports both a trivial helper and the heavyweight writer you meant, and two
-  files with the same name in different packages
-  (`features/coupon/actions/general.ts` vs `features/subscription/...`). Read the
-  imported name, not the path. Set the edge `kind` from the call you found rather
-  than from what the two nodes are for — a screen that loads a record to prefill
-  a form `reads`; the write is in the hook it hands the form to.
-- Shared infrastructure (a db connection module, a logger, a config loader)
-  touches everything; drawing every true edge buries the story the map exists to
-  tell. Give it one node and only the edges that are load-bearing. Treat arrows
-  *into* that node as the highest-risk claims on the map — it is the box whose
-  contents everyone assumes and nobody checks, so it attracts edges drawn from
-  theme rather than fact. Verify each one or leave it out.
-- Attribute behaviour to the code that performs it, not to the thing the user
-  thinks of. A wrapper that people invoke (a composite action, a CLI front-end,
-  a facade) is constantly credited with work that actually lives one layer away
-  in the caller or the callee — the config load that happens in the command
-  rather than the engine, the upload that happens in the workflow rather than
-  the action it calls. When a node's `detail` describes a step, confirm that
-  step is in the file the node's `sourceRef` points at.
-- When docs and code disagree, map the code and say so in your summary. READMEs
-  and CLAUDE.md drift, and a subsystem that exists only in documentation doesn't
-  belong on a map of how the thing actually works. This holds inside a sentence
-  too: if a doc is your only source for a mechanism ("streams uploads through
-  io.Pipe"), grep for it before repeating it. A stale detail copied into a
-  node's `detail` inherits the doc's authority and outlives the doc — and it is
-  a special trap when you have already noticed that file is out of date.
-
-### Large repos (500+ real source files, measured)
-
-Do NOT read files one by one — you will run out of context. Instead:
-
-- Skeleton first: top-level layout, `package.json`/`pyproject.toml`/`go.mod`
-  (dependencies reveal models, tools, and integrations instantly), route
-  manifests, `docker-compose.yml`, cron/queue config, CI workflows.
-- Useful greps: provider SDKs (`@ai-sdk/`, `anthropic`, `openai`),
-  `streamText|generateText|tool(`, `stripe|resend|twilio|slack`, DB clients,
-  `cron|queue|worker` — hit locations show where each subsystem lives.
-- If subagents are available, fan out 2–4 parallel investigations — e.g.
-  entries+crons / AI usage / services+stores+integrations. Instruct each to
-  return ONLY compact JSON (`{nodes, edges}` in the contract shape, with
-  `sourceRef`s) — no prose report, no file excerpts; merge and dedupe
-  yourself. Agree the shared ids up front: name the handful of nodes more than
-  one of them will touch and fix each one's `kind` (`postgres`, not `neon-db`
-  in one report and `db` in another). Reconciling id collisions afterwards
-  costs more than the fan-out saves.
-- Write a large atlas in a few appends rather than one enormous Write call —
-  a 200-node graph can exceed the output limit mid-JSON, and a truncated file
-  means starting the write over.
-- Monorepo: scan the package the user cares about, or map the whole fleet with
-  each package as a `group` keeping only its externally-visible pieces. This is
-  the one case where grouping by directory is right, and it overrides the
-  "never by file layout" rule below: in a monorepo the package boundary *is* the
-  domain boundary — it is what the team deploys, versions and owns separately,
-  and `apps/web` vs `packages/core` is a distinction they say out loud. Group by
-  package only when the packages really are that independent; a `packages/` tree
-  of one product's internal modules is file layout again, and should be grouped
-  by what those modules do.
-- The caps are the design, not a limitation: a 3,000-file repo still maps to
-  20–40 top nodes because near-identical things merge into one ("14 CRUD
-  routes") and file layout is never the map. Every node must be something a
-  teammate would name out loud when explaining the system.
+Never read the viewer sources (`templates/*`) or the rendered `atlas.html`: all
+are fixed, and the CLI prints everything you need.
 
 ## Output contract — write EXACTLY this shape to `.atlas/atlas.json`
 
@@ -313,115 +87,219 @@ Do NOT read files one by one — you will run out of context. Instead:
 }
 ```
 
-The viewer derives the whole header from the graph (kind counts include
-children; model chips from `model` nodes; integration chips from
-store/external nodes with a `domain`) — no summary fields to keep in sync. Legacy
-`stats`/`topModels`/`topTools`/`topIntegrations` fields are ignored; don't
-write them.
+The viewer derives the whole header from the graph — no summary fields to keep
+in sync. Legacy `stats`/`topModels`/`topTools`/`topIntegrations` are ignored;
+don't write them. `project.date` = today.
 
-## Rules (these keep every atlas consistent)
+| field | rule |
+|---|---|
+| `kind` | one of `entry` (route/page/CLI/webhook), `cron`, `service` (a subsystem that performs the product's own work at runtime — not a catch-all for "internal", see Kind discipline), `agent`, `model`, `tool`, `store` (DB/cache/index/config/disk), `external` (3rd-party API). Kinds drive the layout lanes (Entry points → Services & agents → Models & tools → Data & external), so choose accurately. A single-shot LLM call with no loop and no tools is still an `agent`, so its model edge reads correctly — say what it really is in `sub` ("single-shot classify"). |
+| `parent` | optional, max depth 2: children render inside their container, collapsed with a `+N` badge and expanding in place. A container with a single child usually wants to be one node. When the real hierarchy runs deeper — app → feature → route in a monorepo — keep the two levels a teammate names out loud (usually feature as container, routes as children) and compress the rest: the outer level becomes a `group`, the inner detail a child's `sub`. Don't invent a middle tier just to have one. |
+| `group` | optional, <=24: nodes sharing a group render as one labeled stack. Group by feature/domain the way a team talks ("Billing"), never by file layout; hub nodes stay ungrouped. The viewer puts a group in its members' median lane, so one spanning kinds pulls nodes out of their semantic column — a real cost, worth paying when the team genuinely names the thing as one unit. No groups at all beats a forced one. |
+| edge `kind` | optional, prefer setting it: `calls`/`reads`/`writes`/`triggers`, revealed on flow trace. Two nodes can have more than one edge — a service that both reads and writes a store gets both, not a compromise label. |
+| edge `label` | optional, <=24, always visible — spend it on the few relationships that would surprise a reader ("charges on trial end"). See the label budget below. |
+| `domain` | optional favicon domain, no scheme (openai.com) — only for things a recognizable company owns; use the product domain for models (claude.ai). |
+| `detail` | optional, <=200: one sentence shown on click. |
+| `sourceRef` | repo path plus `:line` (<=120). Treat it as **required for internal nodes** — it feeds jump-to-code and the viewer's "Ask agent…" prompt, and a node without one produces a vague prompt. Rules below. |
+| caps | top-level nodes <= 40, children per container <= 20, nodes <= 300, edges <= 500. Labels <= 28 chars, `sub` <= 40. Ids unique; every edge endpoint an existing id. |
 
-- `kind` is one of: `entry` (route/page/CLI/webhook trigger), `cron`
-  (scheduled job), `service` (internal business-logic module the project
-  owns), `agent`, `model`, `tool`, `store` (DB/cache/index), `external`
-  (3rd-party API). Kinds drive the semantic layout lanes (Entry points →
-  Services & agents → Models & tools → Data & external; externals render as
-  dashed outlines) — choose them accurately. Two calls come up constantly: a
-  single-shot LLM call with no loop and no tools is still an `agent`, because it
-  belongs in the models lane for its model edge to read correctly — say what it
-  really is in `sub` ("single-shot classify"). Runtime config the system reads
-  (`.env`, a settings table) is a `store`.
-- Two levels via `parent` (optional): children render inside their container
-  when expanded; max depth 2. Point every edge at the most specific node
-  that's true — the viewer re-routes and merges edges automatically when a
-  container is collapsed. A container with a single child is usually a node that
-  wants to be one node; keep it only when that child is a real thing a reader
-  would look for (a table, a tool). Two nodes can have more than one edge
-  between them — a service that both reads and writes a store gets both, not a
-  compromise label.
-- Caps are ceilings, not targets: top-level nodes <= 40, children per container
-  <= 20, nodes <= 300, edges <= 500. Size the top level to the system rather
-  than to a number — padding a small repo with invented nodes and flattening a
-  large one to look thorough are the same mistake pointing opposite ways. Every
-  top-level node must earn its place; children just need to exist in the repo.
-- Give every distinct agent its own node when there are <= 10; merge only
-  numerous near-identical ones and say so in `sub` ("12 near-identical
-  scrapers"). Chain agents with agent→agent edges when one feeds the next.
-- `group` (optional, <=24 chars): nodes sharing a group render as one labeled
-  stack. Group by feature/domain the way a team talks ("Billing",
-  "Ingestion"), never by file layout; hub nodes stay ungrouped. The viewer puts
-  a group in its members' median lane, so one spanning kinds pulls some nodes out
-  of their semantic column. That's a real cost, not a prohibition: prefer
-  same-kind groups, and spend it when the team genuinely names the thing as one
-  unit (a scoring funnel that runs service → agent → service is worth more
-  together than lane-pure apart). A couple of groups of a few nodes each is
-  typical, and no groups at all beats a forced one.
-- Edge `kind` (optional, prefer setting it): `calls`|`reads`|`writes`|`triggers`,
-  revealed on flow trace. Add a `label` (always visible, <=24) only when a
-  specific phrase says more — put the business logic on edges ("charges on
-  trial end"). Labels never fade, so they compete with each other and with the
-  edges underneath: past roughly one label per four edges the map opens as a
-  thicket of grey text at fit-zoom, legible only once you zoom in. Let `kind`
-  carry the ordinary relationships and spend labels on the few that would
-  surprise a reader.
-- `domain` (optional): favicon domain, no scheme (openai.com, exa.ai) — only
-  for things a recognizable company/product owns; omit for internal nodes.
-  Use the product domain for models (claude.ai, gemini.google.com). Favicons
-  are opt-in (toolbar "Icons" toggle or `--online-icons`); letter tiles
-  render otherwise, so the file makes zero network requests by default.
-- `detail` (optional, <=200): one sentence shown on click. `sourceRef`
-  (optional, <=120): repo path plus `:line` (`src/agents/support.ts:42`) —
-  add it to internal nodes so teammates can jump to code. Both feed the
-  viewer's "Ask agent…" prompt, so a node with a real `sourceRef` and a
-  `detail` hands the next agent a usable starting point; one without them
-  produces a vague prompt. Treat them as required for internal nodes. Use a path
-  you actually saw — don't infer one from a naming pattern (`.ts` when the file
-  is `.tsx`, an index route that doesn't exist). Point at the definition the
-  node names — the type, the func, the route — not the doc comment above it, not
-  the file's bare `const (`, and never the same line as the node's parent (a
-  child sharing its parent's ref is a child you never actually located). A
-  container whose subject is a directory — seven sibling routes, a package, an
-  engine of twelve modules — points at the directory itself (`src/stores`,
-  `app/api/admin`) with no `:line`; `--check` accepts that. Do not borrow one
-  member's file: it makes that member's edges read as claims about the whole
-  container, and it tempts you to leave the member out of the children, where a
-  reader clicking through will never find it. Every member still gets its own
-  child with its own ref. Draw edges from the specific child that makes them
-  true, and from a container only when every child does the same thing.
-  `--check` verifies every sourceRef against the repo and flags those three
-  cases with the line to use instead, so a guess surfaces as a warning rather
-  than as a dead link a teammate finds later.
-- Labels <= 28 chars, `sub` <= 40. Edge `from`/`to` must be existing node
-  ids; ids unique. `project.date` = today.
+**Kind discipline.** `service` is the only kind with no natural boundary, so it
+quietly becomes the bucket everything internal lands in — in the two largest
+maps this skill has produced it took 69% and 70% of all nodes, absorbing UI
+trees, bundler scripts, type definitions and the third-party editors an
+installer writes into. It is not "internal code"; the test is runtime work on
+the product's own data — something calls it, and it moves or transforms
+something. When nothing else seems to fit, one of these does:
+
+- A **UI surface** — screen, panel, component tree, client-side state — belongs
+  to the entry point that mounts it, as a child of that `entry`, and the child
+  carries kind `entry` too: the header pills count children, so a UI tree filed
+  as `service` inflates the service count into a lie about the product. A kit
+  shared by several entries is one node, not a container of its components.
+- **Build, bundling, release and CI** hang off whatever triggers them: an
+  `entry` for push/dispatch, a `cron` for a `schedule:` block.
+- A **third-party product you read or write** is `external`, even though the
+  code doing it is yours — an installer that writes VS Code's `settings.json`
+  is the service; VS Code is not.
+- A **shared library** passes the runtime test — a retrying HTTP client is
+  called and transforms things — so the line between it and a service is drawn
+  by the flow trace, not the call stack: a service is a *stop* in some flow's
+  story; a library is *how* a stop does its work. If every edge it would get is
+  the same `calls` from half the map and none would earn a label, it's a
+  library: at most the single hub node below, otherwise a line in its callers'
+  `sub`/`detail`. The swap test settles arguments — replace its implementation
+  and no flow redraws → no node. Judge against *this* product's story: secret
+  masking is a helper in a web app and a product promise in a security CLI.
+  When the tests disagree — auth middleware and rate limiters are hub-shaped
+  but can *end* any flow with a 401 or 429 — the flow trace wins: a gatekeeper
+  is a stop, and the hub rule prunes its edges, not its node.
+- **Types, constants and vocabulary** perform nothing and are never nodes; fold
+  them into the node that uses them.
+
+What survives is what a teammate names when asked what the product *does*: an
+eligibility engine, an export pipeline, a scan pipeline.
+
+**Sizing.** The top level is the picture a staff engineer draws on a whiteboard:
+as many nodes as the system genuinely has things worth naming out loud, up to
+the ceiling of 40. That is the only number — don't aim at a count, and don't pad
+a small repo or flatten a large one to look thorough. Completeness lives in
+`children`, which enumerate a container's full contents; children only have to
+exist in the repo, while every top-level node has to earn its place.
+
+**Label budget.** Labels never fade, so they compete with each other and with
+the edges underneath. Count the budget at the *opening* view, not over the raw
+edge list: collapsed containers merge every child edge into one drawn edge per
+top-level pair, so labels concentrate — a map that passes one-in-four raw has
+opened at more than half its visible edges labeled. Collapse the map in your
+head to top-level pairs and count again, or run `evals/legibility/stats.py`.
+Let `kind` carry the ordinary relationships.
+
+**`sourceRef` rules.** Use a path you actually saw — don't infer one from a
+naming pattern (`.ts` when the file is `.tsx`, an index route that doesn't
+exist). Point at the definition the node names — the type, the func, the route —
+not the doc comment above it, not a bare `const (`, and never the same line as
+the node's parent. A container whose subject is a directory points at the
+directory itself (`src/stores`, `app/api/admin`) with no `:line`; don't borrow
+one member's file, and give every member its own child with its own ref.
+`--check` verifies all of this against the repo.
+
+## Coverage — the map must account for everything
+
+Before writing the map, assemble `.atlas/inventory.md` from manifests and greps:
+`references/coverage-checklist.md` has the commands and the categories. Keeping
+the list in your head is how a scheduled job or a whole flag-driven mode goes
+missing without anything registering that it did.
+
+Reconcile every line: each item appears in the map — as a node, a child, or
+named in a node's `sub`/`detail` ("+ Google Maps geocoding") — or is omitted in
+one sentence. Record the disposition on the line itself, naming the node **id in
+backticks**, so the claim can be checked rather than believed:
+
+```markdown
+- `scan repo [path]` — child `cmd-scan-repo`
+- `ARMIS_LOCAL_S3_ENDPOINT` relaxes the SSRF check — detail on `api-ssrf`
+- `completion`, `help` — omitted: cobra boilerplate, no architectural consequence
+```
+
+Not `— node (route trees)` or `— mapped`: a disposition that doesn't name an id
+reads as reconciliation without being it, and it is how a whole subsystem goes
+missing from a map whose inventory looked complete. `--inventory` reads these
+back, verifies every id exists, and counts what was never dispositioned:
+
+```bash
+# inventory: 83 items — 73 mapped, 10 omitted, 0 unreconciled
+```
+
+**Omitted-with-a-reason is a finished state, not a failure.** A large repo
+should have a healthy omitted count; inflating nodes to drive it to zero is the
+worse error, and it is what pushes maps to hug the 40 ceiling. Only
+`unreconciled` must reach 0. Done means: a new engineer clicking through every
+container sees nothing missing.
+
+## Edges — where a map misleads
+
+A confidently-labelled edge that isn't real is the one error a reader cannot
+detect: it looks exactly like the true ones. `--check` cannot fault one on its
+own — an edge is structurally valid as long as both ends are node ids.
+
+`--edges` looks for the line that performs each claim in the `from` node's file
+and lists the edges where it found nothing. For each flag, either point at the
+line or move the edge to the node whose file performs it. A clean run isn't a
+proof: it finds edges with no evidence, not edges with the wrong evidence.
+
+Then verify the rest yourself, as one pass over the finished list — not while
+drafting, so a habit of mind can't carry across ten edges. For each edge open
+the file the `from` node's `sourceRef` names and find the line that performs the
+claim: an import of the exact symbol *plus* a call to it, a query naming the
+exact table, a fetch or spawn of the exact path. If the performing line lives in
+another file, the edge belongs to that file's node. Set `kind` from the call you
+found rather than from what the two nodes are for — a screen that loads a record
+to prefill a form `reads`; the write is in the hook it hands the form to.
+
+Three quarters of the wrong edges this skill has produced were off by exactly
+one hop, and every one looked correct from the import block. Four shapes:
+
+- **The wrapper credited with the work.** A composite action, CLI front-end,
+  facade or page shell gets credited with what its caller or callee does — the
+  config load that happens in the command rather than the engine, the query that
+  happens in the driver script rather than the pure function it calls. If the
+  `from` file cannot reach the thing at all (no db client, no import), the edge
+  belongs elsewhere. When a node's `detail` describes a step, confirm that step
+  is in the file the node's `sourceRef` points at.
+- **Import ≠ call, package ≠ symbol.** A utility package routinely exports both
+  the thing you assumed and a far smaller thing everyone actually uses (a
+  retrying client and a bare transport; a path sanitiser and a plain join). Get
+  it wrong once and you write the same wrong edge five times, because every
+  importer looks alike from the import block. Read the imported name, not the
+  path. Two mechanisms recur: a barrel file re-exporting both a trivial helper
+  and the heavyweight writer you meant, and two files with the same name in
+  different packages (`features/coupon/actions/general.ts` vs
+  `features/subscription/...`).
+- **Arrows out of a diagram.** A funnel described in a docstring, README or
+  CLAUDE.md that no module implements. When docs and code disagree, map the code
+  and say so in your summary. This holds inside a sentence too: if a doc is your
+  only source for a mechanism ("streams uploads through io.Pipe"), grep for it
+  before repeating it in a `detail` — a stale detail inherits the doc's
+  authority and outlives the doc.
+- **Hub nodes.** Shared infrastructure (a db connection module, a logger, a
+  config loader) touches everything; drawing every true edge buries the story
+  the map exists to tell. Give it one node and only load-bearing edges: past a
+  dozen edges on one node in the opening view its fan stops being followable,
+  which is the signal to prune the ones drawn from theme ("everything reads
+  config"). Treat arrows *into* a hub as the highest-risk claims on the map — it
+  is the box whose contents everyone assumes and nobody checks. Verify each one
+  or leave it out.
+
+Point every edge at the most specific node that's true — the viewer re-routes
+and merges edges automatically when a container is collapsed. Draw from a
+container only when every child does the same thing.
+
+## Investigating
+
+Measure first, because file trees lie. Vendored directories (`node_modules`,
+`.venv`, `vendor`, `dist`, `.next`, `build`) routinely outnumber real source
+50:1, and the user's own description ("it's a big python repo") is a guess too.
+Count only what you would actually read:
+
+```bash
+git ls-files | grep -E '\.(ts|tsx|js|jsx|py|go|rb|rs|java|swift|kt|m|cs|php)$' \
+  | grep -vE '(^|/)(tests?|__tests__|spec|fixtures|locales)/|\.(test|spec)\.' | wc -l
+```
+
+(or `find` with vendored directories pruned, if it isn't a git repo). Excluding
+tests and fixtures matters, and so does keeping `.swift`/`.kt`/`.m`/`.cs` in — a
+mobile repo whose native half you never counted is a system you never saw.
+Branch on the measured number, not the impression:
+
+| files | approach |
+|---|---|
+| under ~20 | read every one end to end, then go straight to the contract; skip the largest-files sweep and the fan-out. When the whole system is one file, the top level is its *concepts*, not its functions: five or six nodes a teammate would say out loud beat one node per helper, and landing under 10 is finished, not short. |
+| 20–500 | command-first, below |
+| 500+ | `references/large-repos.md` |
+
+Work command-first at every size: directory listings for structure, grep for
+locations, and open only the files that define agents, tools, services and
+schemas — manifests and grep hits answer most of the map.
+
+- **Main flows first**: entry points (routes, webhooks, pages, CLIs), scheduled
+  jobs (crons/queues/workers), and the stores/services they read and write.
+  Scheduled work hides in CI — grep `.github/workflows/` (or the equivalent) for
+  `schedule:`/`cron` before concluding a repo has no `cron` nodes; a nightly job
+  is a real actor even when no application code schedules anything.
+- **Business logic**: the internal services and pipelines the product is built
+  from (billing, ingestion, domain services) — these become `service` nodes,
+  with the interesting sentence on the edge ("charges Stripe on trial end").
+- **External integrations** (payments, email, auth, analytics).
+- **Then the AI layer**, if any: `generateText`/`streamText`/`generateObject`,
+  `@ai-sdk/*` providers, Anthropic/OpenAI SDK clients, agent loops, `tool({...})`
+  definitions, MCP servers. Identify each model's provider and the tools models
+  can call. Give every distinct agent its own node when there are <= 10; merge
+  only numerous near-identical ones and say so in `sub` ("12 near-identical
+  scrapers"). Chain agents with agent→agent edges when one feeds the next. Repos
+  with no AI scan just as well — leave the AI kinds empty.
 
 ## Render
 
-`scripts/render.py` (Python 3 stdlib only, fully offline) inlines the JSON
-into a single self-contained HTML file:
-
-```bash
-python3 scripts/render.py .atlas/atlas.json [--open] [--check] [-o out.html]
-                          [--theme living|print] [--online-icons]
-                          [--repo PATH] [--no-source-check]
-```
-
-`--check` validates without writing, including confirming that every `sourceRef`
-resolves to a real file and to a line worth jumping to — it flags refs that land
-on a comment, a blank, or a bare block opener, and names the line to use instead
-(it finds the repo automatically from the `<repo>/.atlas/atlas.json` layout;
-pass `--repo` if the atlas lives elsewhere, or `--no-source-check` to skip). `--theme print` is a bright editorial
-theme for embeds/printing (default `living`: near-black, animated). The
-rendered viewer handles the rest at runtime — pan/zoom, hover flow tracing,
-double-click focus mode, expandable containers, search (matches hidden
-children), a collapsible minimap (click or drag to move the camera), a guided
-Play tour, an interactive header (kind pills filter by kind; integration/model
-chips jump to their node), an "Ask agent…" button that turns any node or flow into a copyable,
-context-loaded prompt, and theme/motion/icon toggles that are remembered per map
-across reloads (the rendered `--theme`/`--online-icons` stay the default until
-the reader changes them). Share the HTML by sending the file, hosting it, or
-committing it — zero network requests unless icons are switched on.
-
-## Runtime compatibility
-
-Shared by Claude and Codex. Use the local shell tool for `render.py`; no
-network access is required at any step.
+See `references/renderer.md` for the full CLI and what the viewer does at
+runtime. Shared by Claude and Codex: use the local shell tool for `render.py`;
+no network access is required at any step.
