@@ -54,6 +54,16 @@ LEN_LIMITS = {
     "sourceRef": 120,
 }
 EDGE_LABEL_LIMIT = 24
+# Labels never fade, so past roughly one per four edges the map opens as a
+# thicket of grey text at fit-zoom and is legible only once you zoom in.
+LABEL_RATIO_CAP = 0.25
+# Five whitespace-separated fields of digits/*/,- — a crontab line, not a comment.
+CRON_RE = re.compile(r"^[\d*/,\-]+(\s+[\d*/,\-]+){4}(\s|$)")
+# Dispositions the inventory writes back at itself: "node `x`", "children of
+# `y`", "sub on `z`". Loose on the connecting words, strict on the backticks.
+INVENTORY_REF_RE = re.compile(
+    r"\b(?:node|child|children|sub|detail)s?\b[^`\n]{0,16}`([A-Za-z0-9_-]+)`")
+OMITTED_RE = re.compile(r"\bomitted\b", re.I)
 
 
 def validate(data):
@@ -148,7 +158,16 @@ def validate(data):
         if items and len(items) > cap:
             warnings.append(f"{key} has {len(items)} items (cap is {cap})")
 
-    return errors, warnings
+    labelled = sum(1 for e in edges if e.get("label"))
+    if edges and labelled / len(edges) > LABEL_RATIO_CAP:
+        warnings.append(
+            f"{labelled} of {len(edges)} edges carry a label (1 per "
+            f"{len(edges) / labelled:.1f}) — past 1 per {1 / LABEL_RATIO_CAP:.0f} "
+            "the map opens as a thicket of text; let `kind` carry the ordinary "
+            "relationships and keep labels for the ones that would surprise a reader"
+        )
+
+    return errors, warnings, len(top_level)
 
 
 def infer_repo_root(atlas_path):
@@ -175,6 +194,10 @@ def describe_weak_line(text):
     s = text.strip()
     if not s:
         return "a blank"
+    # A crontab expression starts with the same '*' that opens a block-comment
+    # continuation line, and pointing at one is exactly right for a cron node.
+    if CRON_RE.match(s):
+        return None
     # Comment leaders across the languages an atlas is likely to point at. A
     # bare '*' catches the continuation lines of a /* */ or docstring block.
     if s.startswith(("//", "#", "*", "/*", "--", ";", "%", '"""', "'''", "<!--")):
@@ -300,6 +323,53 @@ def load_template():
     })
 
 
+def check_inventory(inv_path, nodes):
+    """Diff the coverage inventory against the map it was supposed to produce.
+
+    The inventory is where the skill decides what the map must account for, and
+    reconciling it is otherwise self-graded: the agent that wrote both files also
+    grades whether they agree. This reads the dispositions back — "node `x`",
+    "child `y`", "detail on `z`" — and checks each named id exists, then flags
+    bullets that name nothing and were never marked omitted.
+    """
+    try:
+        lines = inv_path.read_text(errors="replace").splitlines()
+    except OSError as e:
+        return [f"could not read {inv_path}: {e}"], None
+
+    ids = {n.get("id") for n in nodes}
+    warnings = []
+    mapped = omitted = unreconciled = 0
+    for i, raw in enumerate(lines, 1):
+        s = raw.strip()
+        # Only bullets are inventory items; headings and prose are scaffolding.
+        if not s.startswith(("- ", "* ")) or s.endswith(":"):
+            continue
+        named = INVENTORY_REF_RE.findall(s)
+        if named:
+            unknown = [r for r in named if r not in ids]
+            if unknown:
+                warnings.append(
+                    f"{inv_path.name}:{i} points at node id(s) {unknown} that the map "
+                    "does not contain — the inventory and the map disagree"
+                )
+            else:
+                mapped += 1
+        elif OMITTED_RE.search(s):
+            omitted += 1
+        else:
+            unreconciled += 1
+            warnings.append(
+                f"{inv_path.name}:{i} names no node and is not marked omitted: "
+                f"{s[:70]!r}"
+            )
+    total = mapped + omitted + unreconciled
+    if not total:
+        return warnings, None
+    return warnings, (f"inventory: {total} items — {mapped} mapped, {omitted} omitted, "
+                      f"{unreconciled} unreconciled")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("atlas", nargs="?", default=".atlas/atlas.json",
@@ -315,6 +385,9 @@ def main():
                                    "(default: inferred when the atlas lives in <repo>/.atlas/)")
     ap.add_argument("--no-source-check", action="store_true",
                     help="skip verifying that sourceRef paths exist")
+    ap.add_argument("--inventory", nargs="?", const="", metavar="PATH",
+                    help="diff the coverage inventory against the map "
+                         "(default: inventory.md beside atlas.json)")
     args = ap.parse_args()
 
     atlas_path = Path(args.atlas)
@@ -326,7 +399,7 @@ def main():
     except json.JSONDecodeError as e:
         sys.exit(f"error: {atlas_path} is not valid JSON: {e}")
 
-    errors, warnings = validate(data)
+    errors, warnings, top_level_count = validate(data)
 
     repo_root = Path(args.repo).resolve() if args.repo else infer_repo_root(atlas_path)
     source_note = ""
@@ -346,6 +419,17 @@ def main():
                 source_note += (f"; {edge_labels} labelled edges assert behaviour "
                                 "that only you can verify")
 
+    inv_note = None
+    if args.inventory is not None:
+        inv_path = (Path(args.inventory) if args.inventory
+                    else atlas_path.with_name("inventory.md"))
+        if inv_path.exists():
+            inv_warnings, inv_note = check_inventory(
+                inv_path, (data.get("graph") or {}).get("nodes") or [])
+            warnings.extend(inv_warnings)
+        else:
+            warnings.append(f"no inventory at {inv_path} — coverage is unreconciled")
+
     for w in warnings:
         print(f"warning: {w}", file=sys.stderr)
     if errors:
@@ -353,8 +437,18 @@ def main():
             print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
     if args.check:
+        # The labelled edges are exactly the claims nothing here can check, so
+        # print them as a worklist rather than making the reader re-derive it
+        # from the JSON — the verification sweep should be mechanical.
+        labelled = [e for e in (data.get("graph") or {}).get("edges") or [] if e.get("label")]
+        if labelled:
+            print("labelled edges to verify at a call site:", file=sys.stderr)
+            for e in labelled:
+                print(f"  {e['from']} -> {e['to']}  {e['label']!r}", file=sys.stderr)
+        if inv_note:
+            print(inv_note, file=sys.stderr)
         print(f"{atlas_path} is valid "
-              f"({len(data['graph']['nodes'])} nodes, "
+              f"({top_level_count} top-level of {len(data['graph']['nodes'])} nodes, "
               f"{len(data['graph'].get('edges', []))} edges{source_note})")
         return
 

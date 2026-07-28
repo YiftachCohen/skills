@@ -103,12 +103,31 @@ line number inferred from nearby context looks like. The repo root is inferred
 from the `<repo>/.atlas/atlas.json` layout; pass `--repo PATH` if the atlas
 lives elsewhere, or `--no-source-check` to skip.
 
+It also reports the top-level node count (the number the caps are about, not
+just the total), and warns when more than one edge in four carries a label —
+labels never fade, so past that density the map opens as a thicket of text.
+
 What `--check` deliberately does *not* claim to verify is edges. An edge is
 structurally valid as long as both ends are node ids, so a clean validation run
 says nothing about whether "billing writes to Postgres on trial end" is true.
-The summary line ends by naming how many labelled edges are asserting behaviour
-on your word alone, and the skill instructs the agent to confirm each call site
-rather than infer it from an import.
+So it prints the labelled edges as a worklist and ends by naming how many of
+them assert behaviour on your word alone; the skill makes confirming each one at
+a call site a required step rather than a suggestion. Across a 7-repo blind
+evaluation, three quarters of the wrong edges were off by exactly one hop — the
+caller, the callee, or a sibling in the same directory — and every one of them
+looked correct from the import block.
+
+Reconcile the coverage inventory against the map:
+
+```bash
+python3 atlas/scripts/render.py .atlas/atlas.json --check --inventory
+```
+
+This reads the dispositions the inventory wrote back at itself ("node `x`",
+"child `y`", "detail on `z`"), checks each id exists, and flags any item that
+names nothing and was never marked omitted — reporting e.g. `inventory: 83 items
+— 73 mapped, 10 omitted, 0 unreconciled`. Without it, the agent that wrote both
+files is also the one grading whether they agree.
 
 Install with:
 

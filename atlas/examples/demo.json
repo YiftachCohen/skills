@@ -211,8 +211,7 @@
       {
         "from": "judge",
         "to": "pg",
-        "kind": "writes",
-        "label": "scores"
+        "kind": "writes"
       },
       {
         "from": "research",
@@ -270,8 +269,7 @@
       {
         "from": "stripe",
         "to": "billing-webhook",
-        "kind": "triggers",
-        "label": "webhook"
+        "kind": "triggers"
       },
       {
         "from": "billing-webhook",

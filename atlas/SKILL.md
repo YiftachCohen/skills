@@ -30,16 +30,33 @@ All paths below are relative to the target repo, not to this skill.
    something you did rather than something you meant to do, and on a re-run it
    shows what the repo grew since last time.
 2. Build the JSON contract, reconciling it against every inventory line.
-3. Write it to `.atlas/atlas.json`. Leave the repo's `.gitignore` alone — it's a
+3. Verify every edge, as one pass over the finished list — not while drafting,
+   so a habit of mind can't carry across ten edges. For each edge open the file
+   the `from` node's `sourceRef` names and find the line that performs the
+   claim: an import of the exact symbol *plus* a call to it, a query naming the
+   exact table, a fetch or spawn of the exact path. If the performing line lives
+   in another file, the edge belongs to that file's node. Grep every route path,
+   table name and exported symbol you asserted. Three quarters of the wrong
+   edges this skill has produced were off by exactly one hop — the caller, the
+   callee, or a sibling in the same directory — and every one of them looked
+   correct from the import block.
+4. Write it to `.atlas/atlas.json`. Leave the repo's `.gitignore` alone — it's a
    tracked file, and whether the map gets committed is the user's call, not
    yours. Note in your summary that `.atlas/` is currently untracked so they can
    ignore or commit it deliberately.
-4. Render: `python3 <skill-dir>/scripts/render.py .atlas/atlas.json --open` —
-   writes `.atlas/atlas.html` and opens it. Drop `--open` when there's no
+5. Render, with absolute paths and `--repo` naming the repo the refs are
+   relative to, so the command is correct from any working directory:
+   `python3 /abs/path/to/skill/scripts/render.py /abs/repo/.atlas/atlas.json --repo /abs/repo --open`
+   — writes `.atlas/atlas.html` and opens it. Drop `--open` when there's no
    browser to open (headless, CI, a sandboxed run); the file is written either
    way. On a validation error, fix the JSON and re-run.
-5. Tell the user where the files live and what the map shows. Re-running
-   overwrites them — safe to repeat as the repo evolves.
+6. Tell the user where the files live and what the map shows. `atlas.html` is
+   renderer output — always safe to delete and regenerate. `atlas.json` is
+   yours: re-running does not overwrite it for you, and a tool that refuses to
+   write a file it hasn't read will block you. If you were asked for a fresh
+   scan, or you can't tell how old the existing map is, `rm .atlas/atlas.json
+   .atlas/atlas.html` first and write clean; take the incremental path in
+   "Working efficiently" only when you are deliberately updating a map you trust.
 
 ## Working efficiently
 
@@ -91,22 +108,56 @@ mode goes missing without anything registering that it did:
   sitting in a package you already ticked off ("internal/cmd → the command nodes
   above"). Sorting by size finds it:
   `git ls-files '*.ext' | grep -v test | xargs wc -l | sort -rn`
-  Walk down the list checking each against the map and stop when several
-  consecutive files in a row are ones you would fairly omit — not at a fixed
-  count. The cutoff is where the list goes quiet, and it is usually further down
-  than feels necessary: in one 140-file repo the two biggest misses sat at ranks
-  25 and 29, well past any round number you would have picked in advance.
+  Walk down until files drop below ~300 lines, or until the list turns into one
+  repeating shape (leaf UI components, generated clients, fixtures) — then stop,
+  ticking that shape off once. Don't stop at a round rank: in one 140-file repo
+  the two biggest misses sat at 25 and 29. But don't keep walking a list that has
+  already ended, either — in a single-file app it ends at rank 3, and in a
+  component-heavy UI repo it never goes quiet at all. If one repeating shape
+  dominates twenty consecutive ranks, that shape is itself a finding: it is where
+  most of the code lives, and it probably deserves more than the single node you
+  were about to give it.
 - every mode a flag unlocks — a `--changed`/`--watch`/`--dry-run` that takes a
   different code path is a branch of the system, not a flag
-- the machine-facing contract, where there is one: exit codes, output files,
-  report formats that CI consumes
+- the machine-facing contract — everything a caller depends on that is not a
+  function signature, and the axis maps miss most. Exit codes (check the success
+  branch actually *can* return non-zero: `return 0 if count >= 0 else 1` never
+  fails), output files and report formats, the wire format of each response (one
+  `detect_types` flag made a column serialise three different ways across three
+  endpoints), the status a rejection returns and which layer returns it
+  (framework middleware answers 400 before your handler runs), which routes are
+  unauthenticated, the lifecycle of any gate token you draw (something writes it
+  — what deletes it?), whether each enforcement surface fails open or closed
+  rather than the two you happened to read, in-database functions the app
+  compiles queries against, OS-level contracts (an App Group identifier, a
+  background-mode entitlement), and any token/cost accounting
 - every AI agent, model id, and tool definition
 
-Reconcile: each inventory item must appear in the map — as a node, a child,
-or named in a node's `sub`/`detail` ("+ Google Maps geocoding") — or be
-omittable in one sentence (dead code, pure UI libraries). Say which it was, in
-one word, next to the line. Done means: a new engineer clicking through every
-container sees nothing missing.
+Reconcile: each inventory item must appear in the map — as a node, a child, or
+named in a node's `sub`/`detail` ("+ Google Maps geocoding") — or be omittable
+in one sentence (dead code, pure UI libraries). Record the disposition on the
+line itself, naming the node **id in backticks**, so the claim can be checked
+rather than believed:
+
+```markdown
+- `scan repo [path]` — child `cmd-scan-repo`
+- `ARMIS_LOCAL_S3_ENDPOINT` relaxes the SSRF check — detail on `api-ssrf`
+- go-git gitignore matcher — sub on `scanrepo`
+- `completion`, `help` — omitted: cobra boilerplate, no architectural consequence
+```
+
+Not `— node (route trees)` or `— mapped`: a disposition that doesn't name an id
+reads as reconciliation without being it, and it is how a whole subsystem goes
+missing from a map whose inventory looked complete. `--inventory` reads these
+back, verifies every id exists, and counts what was never dispositioned at all:
+
+```bash
+python3 <skill-dir>/scripts/render.py .atlas/atlas.json --check --inventory
+# inventory: 83 items — 73 mapped, 10 omitted, 0 unreconciled
+```
+
+Anything other than 0 unreconciled means the reconciliation is unfinished. Done
+means: a new engineer clicking through every container sees nothing missing.
 
 ## How to investigate
 
@@ -116,13 +167,27 @@ Measure first, because file trees lie. Vendored directories (`node_modules`,
 Count only what you would actually read:
 
 ```bash
-git ls-files | grep -cE '\.(ts|tsx|js|jsx|py|go|rb|rs|java)$'
+git ls-files | grep -E '\.(ts|tsx|js|jsx|py|go|rb|rs|java|swift|kt|m|cs|php)$' \
+  | grep -vE '(^|/)(tests?|__tests__|spec|fixtures|locales)/|\.(test|spec)\.' | wc -l
 ```
 
-(or `find` with those directories pruned, if it isn't a git repo). A repo that
-looks like 2,000 files is often 20 — and reading 20 files beats inferring from
-greps every time. Pick your approach from the measured number, not the
-impression.
+(or `find` with vendored directories pruned, if it isn't a git repo). Excluding
+tests and fixtures matters: one 1,243-file repo was a third tests and
+translation strings, which pushed the run into the large-repo branch it didn't
+need. Keep `.swift`/`.kt`/`.m`/`.cs` in — a mobile repo whose native half you
+never counted is a system you never saw.
+
+Branch on the measured number, not the impression:
+
+- **under ~20 files**: read every one end to end, then go straight to the
+  coverage contract. Skip the largest-files sweep, the subagent fan-out and the
+  500+ section entirely — all dead weight at this size. When the whole system is
+  one file, the top level is its *concepts*, not its functions: five or six nodes
+  a teammate would say out loud ("routes", "storage", "auth") beat one node per
+  helper, and landing under 10 is finished, not short. A 166-line app does not
+  have 15 things worth naming.
+- **20–500**: command-first, below.
+- **500+**: the large-repo section below.
 
 Then work command-first at every repo size: directory listings for structure,
 grep for locations, and open only the files that define agents, tools, services,
@@ -151,7 +216,13 @@ and schemas — manifests and grep hits answer most of the map.
   actually uses (a retrying client and a bare transport; a path sanitiser and a
   plain join). Get that wrong once and you write the same wrong edge five times,
   because every importer looks alike from the import block. Name the function in
-  your head before you draw the arrow.
+  your head before you draw the arrow. Two variants recur: a barrel file that
+  re-exports both a trivial helper and the heavyweight writer you meant, and two
+  files with the same name in different packages
+  (`features/coupon/actions/general.ts` vs `features/subscription/...`). Read the
+  imported name, not the path. Set the edge `kind` from the call you found rather
+  than from what the two nodes are for — a screen that loads a record to prefill
+  a form `reads`; the write is in the hook it hands the form to.
 - Shared infrastructure (a db connection module, a logger, a config loader)
   touches everything; drawing every true edge buries the story the map exists to
   tell. Give it one node and only the edges that are load-bearing. Treat arrows
@@ -194,8 +265,15 @@ Do NOT read files one by one — you will run out of context. Instead:
 - Write a large atlas in a few appends rather than one enormous Write call —
   a 200-node graph can exceed the output limit mid-JSON, and a truncated file
   means starting the write over.
-- Monorepo: scan the package the user cares about, or make each package a
-  `group` keeping only its externally-visible pieces.
+- Monorepo: scan the package the user cares about, or map the whole fleet with
+  each package as a `group` keeping only its externally-visible pieces. This is
+  the one case where grouping by directory is right, and it overrides the
+  "never by file layout" rule below: in a monorepo the package boundary *is* the
+  domain boundary — it is what the team deploys, versions and owns separately,
+  and `apps/web` vs `packages/core` is a distinction they say out loud. Group by
+  package only when the packages really are that independent; a `packages/` tree
+  of one product's internal modules is file layout again, and should be grouped
+  by what those modules do.
 - The caps are the design, not a limitation: a 3,000-file repo still maps to
   20–40 top nodes because near-identical things merge into one ("14 CRUD
   routes") and file layout is never the map. Every node must be something a
@@ -301,7 +379,15 @@ write them.
   is `.tsx`, an index route that doesn't exist). Point at the definition the
   node names — the type, the func, the route — not the doc comment above it, not
   the file's bare `const (`, and never the same line as the node's parent (a
-  child sharing its parent's ref is a child you never actually located).
+  child sharing its parent's ref is a child you never actually located). A
+  container whose subject is a directory — seven sibling routes, a package, an
+  engine of twelve modules — points at the directory itself (`src/stores`,
+  `app/api/admin`) with no `:line`; `--check` accepts that. Do not borrow one
+  member's file: it makes that member's edges read as claims about the whole
+  container, and it tempts you to leave the member out of the children, where a
+  reader clicking through will never find it. Every member still gets its own
+  child with its own ref. Draw edges from the specific child that makes them
+  true, and from a container only when every child does the same thing.
   `--check` verifies every sourceRef against the repo and flags those three
   cases with the line to use instead, so a guess surfaces as a warning rather
   than as a dead link a teammate finds later.
