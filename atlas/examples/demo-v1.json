@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "project": {
+    "name": "Acme Support",
+    "slug": "acme-support",
+    "tagline": "AI support desk with research, billing, and nightly evals",
+    "date": "2026-07-21"
+  },
+  "stats": { "agents": 3, "models": 2, "tools": 3, "integrations": 3 },
+  "topModels": [
+    { "id": "gpt", "label": "GPT-5.5", "domain": "openai.com" },
+    { "id": "claude", "label": "Claude Fable 5", "domain": "claude.ai" }
+  ],
+  "topTools": [
+    { "id": "exa", "label": "Exa", "domain": "exa.ai" },
+    { "id": "parallel", "label": "Parallel", "domain": "parallel.ai" },
+    { "id": "firecrawl", "label": "Firecrawl", "domain": "firecrawl.dev" }
+  ],
+  "topIntegrations": [
+    { "id": "stripe", "label": "Stripe", "domain": "stripe.com" },
+    { "id": "resend", "label": "Resend", "domain": "resend.com" },
+    { "id": "slack", "label": "Slack", "domain": "slack.com" }
+  ],
+  "graph": {
+    "nodes": [
+      { "id": "app", "label": "Next.js app", "kind": "entry", "sub": "/api/chat", "domain": "nextjs.org" },
+      { "id": "cron", "label": "Daily cron", "kind": "cron", "sub": "digest, evals" },
+      { "id": "research", "label": "Research agent", "kind": "agent", "sub": "deep dives", "sourceRef": "src/agents/research.ts:18", "detail": "Runs multi-step deep dives with web search and compiles the daily digest." },
+      { "id": "support", "label": "Support agent", "kind": "agent", "sub": "answers tickets", "sourceRef": "src/agents/support.ts:42", "detail": "Answers customer tickets with order lookups; escalates to Slack when unsure." },
+      { "id": "judge", "label": "Evals judge", "kind": "agent", "sub": "LLM-as-judge", "sourceRef": "src/evals/judge.ts", "group": "Evals" },
+      { "id": "billing", "label": "Billing service", "kind": "service", "sub": "plans & quotas", "sourceRef": "src/services/billing.ts", "group": "Billing" },
+      { "id": "webhook", "label": "Stripe webhook", "kind": "entry", "sub": "/webhooks/stripe", "group": "Billing" },
+      { "id": "gpt", "label": "GPT-5.5", "kind": "model", "domain": "openai.com" },
+      { "id": "claude", "label": "Claude Fable 5", "kind": "model", "domain": "claude.ai" },
+      { "id": "exa", "label": "Exa", "kind": "tool", "domain": "exa.ai" },
+      { "id": "parallel", "label": "Parallel", "kind": "tool", "domain": "parallel.ai" },
+      { "id": "firecrawl", "label": "Firecrawl", "kind": "tool", "domain": "firecrawl.dev" },
+      { "id": "pg", "label": "Postgres", "kind": "store", "sub": "answers, scores", "domain": "postgresql.org" },
+      { "id": "resend", "label": "Resend", "kind": "external", "sub": "digest emails", "domain": "resend.com" },
+      { "id": "slack", "label": "Slack", "kind": "external", "sub": "escalations", "domain": "slack.com" },
+      { "id": "stripe", "label": "Stripe", "kind": "external", "domain": "stripe.com" }
+    ],
+    "edges": [
+      { "from": "app", "to": "research", "kind": "triggers" },
+      { "from": "app", "to": "support", "kind": "triggers" },
+      { "from": "app", "to": "billing", "kind": "calls" },
+      { "from": "cron", "to": "research", "kind": "triggers", "label": "daily digest" },
+      { "from": "cron", "to": "judge", "kind": "triggers", "label": "nightly evals" },
+      { "from": "judge", "to": "claude", "kind": "calls" },
+      { "from": "judge", "to": "pg", "kind": "writes" },
+      { "from": "webhook", "to": "billing", "kind": "calls" },
+      { "from": "research", "to": "gpt", "kind": "calls" },
+      { "from": "research", "to": "exa", "kind": "calls" },
+      { "from": "research", "to": "parallel", "kind": "calls" },
+      { "from": "support", "to": "claude", "kind": "calls" },
+      { "from": "support", "to": "firecrawl", "kind": "calls" },
+      { "from": "research", "to": "resend", "kind": "calls" },
+      { "from": "research", "to": "pg", "kind": "writes" },
+      { "from": "support", "to": "pg", "kind": "reads" },
+      { "from": "support", "to": "slack", "kind": "calls", "label": "escalations" },
+      { "from": "billing", "to": "stripe", "kind": "calls", "label": "charges on trial end" }
+    ]
+  }
+}
