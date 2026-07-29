@@ -34,7 +34,7 @@ CSS_PLACEHOLDER = "/*__CSS__*/"
 JS_PLACEHOLDER = "/*__JS__*/"
 
 NODE_KINDS = {"entry", "cron", "agent", "model", "tool", "service", "store", "external"}
-EDGE_KINDS = {"calls", "reads", "writes", "triggers"}
+EDGE_KINDS = {"calls", "reads", "writes", "triggers", "enqueues"}
 THEMES = ("living", "print")
 SLUG_RE = re.compile(r"^[a-z0-9-]{1,48}$")
 
@@ -212,6 +212,20 @@ def validate(data):
     # maps peak in the 40s, and a genuinely service-heavy backend has headroom
     # to ~60%. Children count too — the header pills count every node, so a UI
     # tree filed as `service` misreports the product even while drawn collapsed.
+    # `tool` is an AI kind — a function a model can call — and it is the one
+    # kind whose English name invites the wrong reading, so an SDK package or a
+    # CLI lands there and the header then advertises "2 tools" on a repo with no
+    # AI in it. Tools without a model or agent to call them is that mistake.
+    kinds_present = {n.get("kind") for n in nodes}
+    if "tool" in kinds_present and not ({"model", "agent"} & kinds_present):
+        tools = [n.get("id") for n in nodes if n.get("kind") == "tool"]
+        warnings.append(
+            f"{len(tools)} `tool` node(s) {tools[:5]} but no `model` or `agent` — "
+            "`tool` means a function a model can call, and the header will "
+            "advertise an AI layer this repo may not have. An SDK, CLI or helper "
+            "package is not a tool: it belongs to whatever mounts or calls it"
+        )
+
     svc = sum(1 for n in nodes if n.get("kind") == "service")
     if len(nodes) >= 30 and svc > 0.6 * len(nodes):
         warnings.append(

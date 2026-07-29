@@ -93,10 +93,10 @@ don't write them. `project.date` = today.
 
 | field | rule |
 |---|---|
-| `kind` | one of `entry` (route/page/CLI/webhook), `cron`, `service` (a subsystem that performs the product's own work at runtime — not a catch-all for "internal", see Kind discipline), `agent`, `model`, `tool`, `store` (DB/cache/index/config/disk), `external` (3rd-party API). Kinds drive the layout lanes (Entry points → Services & agents → Models & tools → Data & external), so choose accurately. A single-shot LLM call with no loop and no tools is still an `agent`, so its model edge reads correctly — say what it really is in `sub` ("single-shot classify"). |
+| `kind` | one of `entry` (route/page/CLI/webhook), `cron` (scheduled job), `service` (a subsystem that performs the product's own work at runtime — not a catch-all for "internal", see Kind discipline), `agent` (an LLM call the product makes), `model` (the model behind it — an actual model id), `tool` (**a function a model can call**: a `tool({...})` definition, an MCP server tool), `store` (DB/cache/index/config/disk), `external` (3rd-party API). Kinds drive the layout lanes (Entry points → Services & agents → Models & tools → Data & external), so choose accurately. A single-shot LLM call with no loop and no tools is still an `agent`, so its model edge reads correctly — say what it really is in `sub` ("single-shot classify"). |
 | `parent` | optional, max depth 2: children render inside their container, collapsed with a `+N` badge and expanding in place. A container with a single child usually wants to be one node. When the real hierarchy runs deeper — app → feature → route in a monorepo — keep the two levels a teammate names out loud (usually feature as container, routes as children) and compress the rest: the outer level becomes a `group`, the inner detail a child's `sub`. Don't invent a middle tier just to have one. |
 | `group` | optional, <=24: nodes sharing a group render as one labeled stack. Group by feature/domain the way a team talks ("Billing"), never by file layout; hub nodes stay ungrouped. The viewer puts a group in its members' median lane, so one spanning kinds pulls nodes out of their semantic column — a real cost, worth paying when the team genuinely names the thing as one unit. No groups at all beats a forced one. |
-| edge `kind` | optional, prefer setting it: `calls`/`reads`/`writes`/`triggers`, revealed on flow trace. Two nodes can have more than one edge — a service that both reads and writes a store gets both, not a compromise label. |
+| edge `kind` | optional, prefer setting it: `calls`/`reads`/`writes`/`triggers`/`enqueues`, revealed on flow trace. Two nodes can have more than one edge — a service that both reads and writes a store gets both, not a compromise label. Use `enqueues` for a hand-off that returns before the work happens (a task queue, a job runner, a pub/sub publish): it is where the flow stops being synchronous, which is the first thing a reader needs when the far end never ran. |
 | edge `label` | optional, <=24, always visible — spend it on the few relationships that would surprise a reader ("charges on trial end"). See the label budget below. |
 | edge `evidence` | optional `path:line` — the call site you read that proves this edge. Records a verification the text heuristic can't repeat (DI, barrel re-exports, generated registries), so `--edges` stops re-flagging it. |
 | `domain` | optional favicon domain, no scheme (openai.com) — only for things a recognizable company owns; use the product domain for models (claude.ai). |
@@ -139,6 +139,24 @@ something. When nothing else seems to fit, one of these does:
 
 What survives is what a teammate names when asked what the product *does*: an
 eligibility engine, an export pipeline, a scan pipeline.
+
+**Granularity.** A kind says what a node *is*; it doesn't say how finely to
+slice, and left unstated the same repo maps three different ways. Two rules
+settle the cases that actually diverged — three runs over one monorepo produced
+11, 2 and 2 stores and 23, 4 and 5 crons, all of them defensible:
+
+- **One `store` per datastore engine**, not per table. Postgres is one node;
+  tables, collections and indexes are `children` of it when they earn their own
+  line. Two Postgres databases with separate connection strings are two engines
+  and two nodes; two schemas in one database are not.
+- **One `cron` per job** — the thing that runs — with the schedule in `sub`
+  ("Vercel · every 5m"). Not one per cadence, and not one node for all of them.
+  Jobs that share a schedule *and* a handler merge with a count ("6 reminder
+  crons"); jobs that merely run at the same time do not.
+
+The same instinct generalises: slice by what the system has one of, not by what
+happens to be convenient — and when merging, say so in `sub` so the reader knows
+a count was collapsed rather than a subsystem dropped.
 
 **Sizing.** The top level is the picture a staff engineer draws on a whiteboard:
 as many nodes as the system genuinely has things worth naming out loud, up to
