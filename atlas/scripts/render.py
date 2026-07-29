@@ -57,6 +57,12 @@ EDGE_LABEL_LIMIT = 24
 # Labels never fade, so past roughly one per four edges the map opens as a
 # thicket of grey text at fit-zoom and is legible only once you zoom in.
 LABEL_RATIO_CAP = 0.25
+# Below this share of internal nodes carrying a `detail`, the map renders fine
+# and reads thin — see the comprehension evidence in validate().
+DETAIL_COVERAGE_MIN = 0.8
+# Past this share of edges carrying an `evidence` ref, the attestation has
+# stopped being the exception it is for and has switched the check off.
+ATTESTED_SHARE_CAP = 0.8
 # Five whitespace-separated fields of digits/*/,- — a crontab line, not a comment.
 CRON_RE = re.compile(r"^[\d*/,\-]+(\s+[\d*/,\-]+){4}(\s|$)")
 # Dispositions the inventory writes back at itself. The contract is "name the
@@ -257,6 +263,24 @@ def validate(data):
         if items and len(items) > cap:
             warnings.append(f"{key} has {len(items)} items (cap is {cap})")
 
+    # `detail` is the sentence a reader actually reads. In a controlled pair of
+    # maps of one repo, the map with detail on 92% of its nodes answered 16/16
+    # comprehension questions and the one with 19% answered 10/16 — and every
+    # missed answer was a missing sentence, not a missing box or a wrong kind.
+    # It is the highest-leverage optional field in the contract, so a map that
+    # skips it is worth flagging even though it renders fine.
+    internal = [n for n in nodes if n.get("kind") not in ("external", "model")]
+    if len(internal) >= 12:
+        with_detail = sum(1 for n in internal if (n.get("detail") or "").strip())
+        share = with_detail / len(internal)
+        if share < DETAIL_COVERAGE_MIN:
+            warnings.append(
+                f"only {with_detail} of {len(internal)} internal nodes carry a `detail` "
+                f"({share:.0%}) — the sentence on click is what a reader who has never "
+                "seen the repo actually reads, and it is where comprehension is won or "
+                "lost; treat it as required alongside `sourceRef`"
+            )
+
     # The opening view re-routes every edge to its top-level ancestor, so a
     # top-level node can be edge-connected in the JSON's terms yet float
     # unconnected in the view the reader actually meets. A floating box reads
@@ -335,6 +359,18 @@ def describe_weak_line(text):
     if s.rstrip(":") in {"const (", "var (", "import (", "type (", "(", ")", "{", "}",
                          "};", "});", "]", "[", "else", "try", "end"}:
         return "a bare block-opener"
+    # The same thing wearing a brace or a keyword — `try {`, `} catch (e) {`,
+    # `} else {`. Hand-audits of `evidence` refs kept landing here.
+    # The keyword alternation is the whole guard here: a real call can't match
+    # it, so no extra paren test is needed (and one wrongly spared `} catch (e) {`).
+    if re.fullmatch(r"[})\]]*\s*(try|do|finally|else(\s+if\s*\([^)]*\))?|"
+                    r"catch\s*(\([^)]*\))?)\s*[{]?\s*[};]*", s):
+        return "a bare block-opener"
+    # An object-literal key opening a nested literal (`orderBy: {`, `data: {`,
+    # `where: {`) is the inside of a call, not the call — the reader lands mid
+    # argument with no idea which function they are in.
+    if re.fullmatch(r"[\w$'\"\[\]. ]+\s*:\s*[{\[]\s*,?", s):
+        return "an argument key, not the call"
     return None
 
 
@@ -655,6 +691,11 @@ def check_edges(nodes, edges, repo_root):
         # not in a file we could point at.
         if src.get("kind") == "external":
             continue
+        # An `evidence` ref excuses an edge from the heuristic, so it is the one
+        # place a map can silence this check — and both cal.com arms silenced it
+        # completely by attesting every edge, after which one of them hand-found
+        # 20 of its own 69 refs wrong. So the ref is always validated, and the
+        # blanket case is reported at the end rather than passing quietly.
         ev = e.get("evidence")
         if isinstance(ev, str) and ev:
             bad = describe_ref(ev, repo_root)
@@ -737,6 +778,16 @@ def check_edges(nodes, edges, repo_root):
         f"{src.get('sourceRef')} {why}"
         for e, src, why in findings
     ]
+    total = checked + attested
+    if total >= 20 and attested > ATTESTED_SHARE_CAP * total:
+        warnings.append(
+            f"{attested} of {total} edges carry an `evidence` ref "
+            f"({attested / total:.0%}) — at that share the heuristic never ran, and "
+            "a check that is switched off reports the same clean line as one that "
+            "passed. `evidence` is for the few edges a text scan cannot see (DI "
+            "containers, barrel re-exports, generated registries); let the rest be "
+            "checked"
+        )
     return warnings, checked, len(findings), attested, partial
 
 

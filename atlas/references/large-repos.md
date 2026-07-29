@@ -17,8 +17,8 @@ Do NOT read files one by one — you will run out of context.
   and `db` in another). Reconciling id collisions afterwards costs more than the
   fan-out saves.
   A subagent has not read this skill, so paste the vocabulary into its prompt:
-  the eight node kinds, the four edge kinds (`calls`/`reads`/`writes`/
-  `triggers`), and the `sourceRef` rule. Left unstated, they invent edge kinds
+  the eight node kinds, the five edge kinds (`calls`/`reads`/`writes`/
+  `triggers`/`enqueues`), and the `sourceRef` + `detail` rules. Left unstated, they invent edge kinds
   (`uses`, `depends`) and you rewrite every edge by hand — in one run all four
   came back invalid. Ask each for inventory lines for its own slice too;
   reconciliation is per-line, and the agent that read the code is the one who
