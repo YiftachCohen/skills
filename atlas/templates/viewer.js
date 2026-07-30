@@ -145,13 +145,31 @@
                    tool: "tools", service: "services", store: "stores", external: "externals" };
   // Counts cover EVERY node, children included — the pill answers "how many
   // tools does this system have", not "how many boxes are drawn collapsed".
+  //
+  // One exception, and it comes from the contract rather than from taste. A
+  // `store` is one node per datastore ENGINE, so a store nested inside a store
+  // is a table group, an index or an interchangeable backend of that same
+  // engine — not another place data lives. Counting those made a map of a
+  // system with four databases advertise seventeen stores. The exception does
+  // NOT generalise: every other kind nests real instances, and collapsing them
+  // would lie in the other direction — 63 route groups under 8 blueprints are
+  // 63 entry points, and 33 jobs under 2 runners are 33 jobs.
+  const kindById = new Map(graphNodes.map(n => [n.id, kindKey(n)]));
+  const isEngineDecomposition = n =>
+    kindKey(n) === "store" && n.parent && kindById.get(n.parent) === "store";
+
   for (const kind of Object.keys(KINDS)) {
-    const count = graphNodes.filter(n => (KINDS[n.kind] ? n.kind : "external") === kind).length;
+    const ofKind = graphNodes.filter(n => kindKey(n) === kind);
+    const count = ofKind.filter(n => !isEngineDecomposition(n)).length;
     if (!count) continue;
+    const topCount = ofKind.filter(n => !n.parent).length;
     const d = document.createElement("button");
     d.className = "stat";
     d.dataset.kindfilter = kind;
-    d.title = `Show only ${PLURAL[kind]} (click again to clear)`;
+    // Both numbers matter and only one fits: the headline is what the system
+    // has, the tooltip is what a whiteboard drawing of it would show.
+    d.title = `${count} ${count === 1 ? kind : PLURAL[kind]}, ${topCount} at the top level` +
+              ` — show only ${PLURAL[kind]} (click again to clear)`;
     d.innerHTML = glyphSvg(kind, `color:var(--${kind});width:10px;height:10px;align-self:center`) +
                   `<b>${count}</b><span>${count === 1 ? kind : PLURAL[kind]}</span>`;
     d.addEventListener("click", () => setKindFilter(kind));
