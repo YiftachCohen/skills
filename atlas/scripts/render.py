@@ -18,7 +18,7 @@ import os
 import re
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 # The viewer ships as three source files so each stays editable on its own, and
 # is stitched back into ONE self-contained HTML file here. Nothing about the
@@ -34,7 +34,7 @@ CSS_PLACEHOLDER = "/*__CSS__*/"
 JS_PLACEHOLDER = "/*__JS__*/"
 
 NODE_KINDS = {"entry", "cron", "agent", "model", "tool", "service", "store", "external"}
-EDGE_KINDS = {"calls", "reads", "writes", "triggers"}
+EDGE_KINDS = {"calls", "reads", "writes", "triggers", "enqueues"}
 THEMES = ("living", "print")
 SLUG_RE = re.compile(r"^[a-z0-9-]{1,48}$")
 
@@ -57,13 +57,82 @@ EDGE_LABEL_LIMIT = 24
 # Labels never fade, so past roughly one per four edges the map opens as a
 # thicket of grey text at fit-zoom and is legible only once you zoom in.
 LABEL_RATIO_CAP = 0.25
+# Below this share of internal nodes carrying a `detail`, the map renders fine
+# and reads thin — see the comprehension evidence in validate().
+DETAIL_COVERAGE_MIN = 0.8
+# Past this share of edges carrying an `evidence` ref, the attestation has
+# stopped being the exception it is for and has switched the check off.
+ATTESTED_SHARE_CAP = 0.8
 # Five whitespace-separated fields of digits/*/,- — a crontab line, not a comment.
 CRON_RE = re.compile(r"^[\d*/,\-]+(\s+[\d*/,\-]+){4}(\s|$)")
-# Dispositions the inventory writes back at itself: "node `x`", "children of
-# `y`", "sub on `z`". Loose on the connecting words, strict on the backticks.
+# Dispositions the inventory writes back at itself. The contract is "name the
+# id in backticks" — any backticked token that IS a node id counts, whatever the
+# connecting words ("child `x`", "container `x`", "→ `x`"). The keyword form is
+# still recognised separately so that "node `x`" naming an id the map lacks can
+# be reported as a disagreement rather than lumped in as undispositioned.
 INVENTORY_REF_RE = re.compile(
-    r"\b(?:node|child|children|sub|detail)s?\b[^`\n]{0,16}`([A-Za-z0-9_-]+)`")
+    r"\b(?:node|child|children|sub|detail|container|group|edge)s?\b"
+    r"[^`\n]{0,16}`([A-Za-z0-9_-]+)`")
+BACKTICKED_RE = re.compile(r"`([A-Za-z0-9_-]+)`")
 OMITTED_RE = re.compile(r"\bomitted\b", re.I)
+
+# --- edge evidence (see check_edges) ------------------------------------------
+# What reaching a store looks like in source, in the languages an atlas points at.
+SQL_VERB_RE = re.compile(r"\b(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|UPSERT|"
+                         r"CREATE\s+TABLE)\b", re.I)
+DB_CALL_RE = re.compile(
+    r"(\bexecute\b|\bexecutemany\b|\bcursor\b|psycopg|asyncpg|sqlalchemy|sqlite3|"
+    r"\bsession\.|\bdb\.|drizzle|prisma\.|\bknex\b|mongoose|\.query\(|\.insert\(|"
+    r"\.update\(|\.select\(|\.findMany\(|\.upsert\(|\.delete\(|"
+    # A key-value store is reached without a query at all. An offline-first
+    # mobile app has no SQL anywhere in it, so without these every store edge
+    # in one reads as unevidenced.
+    r"\.setItem\(|\.getItem\(|\.removeItem\(|AsyncStorage|\bMMKV\b|SecureStore|"
+    r"localStorage|sessionStorage|indexedDB|\.getObject\(|\.putObject\()", re.I)
+# A caller never names the product; it names the driver or the env var. Substring
+# matched, not word-bounded: `import psycopg2` must satisfy "psycopg".
+STORE_DRIVERS = {
+    "postgres": ("psycopg", "asyncpg", "pg8000", "sqlalchemy", "drizzle", "prisma",
+                 "DATABASE_URL", "neon", "supabase"),
+    "mysql": ("mysql", "mariadb", "DATABASE_URL"),
+    "sqlite": ("sqlite", "better-sqlite", "expo-sqlite", "openDatabase"),
+    "redis": ("redis", "REDIS_URL"),
+    "mongo": ("mongodb", "mongoose", "pymongo", "motor", "MONGO_URL"),
+    "clickhouse": ("clickhouse", "CLICKHOUSE_"),
+    "bigquery": ("bigquery", "google-cloud-bigquery"),
+    "firestore": ("firebase", "firestore", "google-cloud-firestore"),
+    "firebase": ("firebase", "firestore"),
+    "r2": ("S3Client", "R2_", "boto3", "aws-sdk"),
+    "s3": ("S3Client", "boto3", "aws-sdk"),
+    "gcs": ("storage.Client", "google-cloud-storage"),
+    "dynamo": ("dynamodb", "boto3"),
+    "elastic": ("elasticsearch", "opensearch"),
+    "kafka": ("kafkajs", "confluent", "KAFKA_"),
+    "sqs": ("sqs", "boto3", "aws-sdk"),
+    # On-device and in-browser stores — the whole datastore tier of a mobile or
+    # offline-first app, where nothing resembles a query.
+    "asyncstorage": ("AsyncStorage", "async-storage"),
+    "async storage": ("AsyncStorage", "async-storage"),
+    "mmkv": ("MMKV", "react-native-mmkv"),
+    "securestore": ("SecureStore", "expo-secure-store"),
+    "secure store": ("SecureStore", "expo-secure-store"),
+    "keychain": ("Keychain", "keytar", "SecItem"),
+    "localstorage": ("localStorage", "sessionStorage"),
+    "indexeddb": ("indexedDB", "Dexie"),
+}
+ENV_READ_RE = re.compile(r"process\.env|os\.environ|os\.Getenv|getenv|dotenv|ENV\[", re.I)
+# Config lives in a module or a .env, never in a schema file — an id containing
+# "config" is not enough to tell those apart, so the ref decides.
+CONFIG_REF_RE = re.compile(r"(^|/)(\.env|config|settings|constants)(\.|/|$)", re.I)
+IMPORT_LINE_RE = re.compile(
+    r"^\s*(from\s+\S+\s+import\b|import\b|export\s+.*\bfrom\b|.*\brequire\s*\(|"
+    r"\s*use\s+|#include\b)")
+# Route files whose URL path is the thing a caller actually names.
+ROUTE_FILE_RE = re.compile(r"(^|/)(route|page|index|\+page|\+server)\.[jt]sx?$")
+EDGE_SOURCE_EXT = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".go", ".rb", ".rs",
+                   ".java", ".swift", ".kt", ".m", ".cs", ".php", ".sql", ".yml",
+                   ".yaml", ".sh", ".html", ".jinja", ".j2", ".erb", ".vue", ".svelte"}
+DIR_FILE_CAP = 40
 
 
 def validate(data):
@@ -143,6 +212,36 @@ def validate(data):
         if count > CHILDREN_CAP:
             warnings.append(f"container {pid!r} has {count} children (cap {CHILDREN_CAP})")
 
+    # `service` is the only kind with no natural boundary, so it is where a map
+    # rots: UI trees, build tooling and shared libraries all filed as services.
+    # Both observed cases of the failure sat at 69-70% of all nodes; the honest
+    # maps peak in the 40s, and a genuinely service-heavy backend has headroom
+    # to ~60%. Children count too — the header pills count every node, so a UI
+    # tree filed as `service` misreports the product even while drawn collapsed.
+    # `tool` is an AI kind — a function a model can call — and it is the one
+    # kind whose English name invites the wrong reading, so an SDK package or a
+    # CLI lands there and the header then advertises "2 tools" on a repo with no
+    # AI in it. Tools without a model or agent to call them is that mistake.
+    kinds_present = {n.get("kind") for n in nodes}
+    if "tool" in kinds_present and not ({"model", "agent"} & kinds_present):
+        tools = [n.get("id") for n in nodes if n.get("kind") == "tool"]
+        warnings.append(
+            f"{len(tools)} `tool` node(s) {tools[:5]} but no `model` or `agent` — "
+            "`tool` means a function a model can call, and the header will "
+            "advertise an AI layer this repo may not have. An SDK, CLI or helper "
+            "package is not a tool: it belongs to whatever mounts or calls it"
+        )
+
+    svc = sum(1 for n in nodes if n.get("kind") == "service")
+    if len(nodes) >= 30 and svc > 0.6 * len(nodes):
+        warnings.append(
+            f"{svc} of {len(nodes)} nodes are `service` ({100 * svc // len(nodes)}%) — "
+            "the residual-bucket signature. Recheck each against Kind discipline "
+            "in SKILL.md: UI trees are `entry` children, build/CI hangs off its "
+            "trigger, third-party products are `external`, libraries fold into "
+            "callers or one hub node"
+        )
+
     for i, e in enumerate(edges):
         for end in ("from", "to"):
             if e.get(end) not in id_set:
@@ -152,11 +251,65 @@ def validate(data):
         lbl = e.get("label")
         if isinstance(lbl, str) and len(lbl) > EDGE_LABEL_LIMIT:
             warnings.append(f"edges[{i}] label is {len(lbl)} chars (cap {EDGE_LABEL_LIMIT})")
+        ev = e.get("evidence")
+        if ev is not None and (not isinstance(ev, str) or ":" not in ev):
+            warnings.append(
+                f"edges[{i}] evidence {ev!r} is not a `path:line` ref — it attests "
+                "that you read the performing call site, so it needs the line"
+            )
 
     for key, cap in CAPS.items():
         items = graph.get(key)
         if items and len(items) > cap:
             warnings.append(f"{key} has {len(items)} items (cap is {cap})")
+
+    # `detail` is the sentence a reader actually reads. In a controlled pair of
+    # maps of one repo, the map with detail on 92% of its nodes answered 16/16
+    # comprehension questions and the one with 19% answered 10/16 — and every
+    # missed answer was a missing sentence, not a missing box or a wrong kind.
+    # It is the highest-leverage optional field in the contract, so a map that
+    # skips it is worth flagging even though it renders fine.
+    internal = [n for n in nodes if n.get("kind") not in ("external", "model")]
+    if len(internal) >= 12:
+        with_detail = sum(1 for n in internal if (n.get("detail") or "").strip())
+        share = with_detail / len(internal)
+        if share < DETAIL_COVERAGE_MIN:
+            warnings.append(
+                f"only {with_detail} of {len(internal)} internal nodes carry a `detail` "
+                f"({share:.0%}) — the sentence on click is what a reader who has never "
+                "seen the repo actually reads, and it is where comprehension is won or "
+                "lost; treat it as required alongside `sourceRef`"
+            )
+
+    # The opening view re-routes every edge to its top-level ancestor, so a
+    # top-level node can be edge-connected in the JSON's terms yet float
+    # unconnected in the view the reader actually meets. A floating box reads
+    # as unfinished — draw its real relationship or fold it into a neighbour.
+    def top_ancestor(nid):
+        seen = set()
+        while parents.get(nid) and nid not in seen:
+            seen.add(nid)
+            nid = parents[nid]
+        return nid
+
+    if edges:
+        visible = set()
+        for e in edges:
+            f, t = e.get("from"), e.get("to")
+            if f in id_set and t in id_set:
+                fa, ta = top_ancestor(f), top_ancestor(t)
+                if fa != ta:
+                    visible.update((fa, ta))
+        for n in top_level:
+            if n.get("id") not in visible:
+                warnings.append(
+                    f"top-level node {n.get('id')!r} has no edge in the opening view "
+                    "— a floating box reads as unfinished. Three fixes, in order: "
+                    "draw the relationship it really has (a docs site is built by CI "
+                    "and documents an API); make it a child of the thing it ships "
+                    "with; or, if it shares nothing with the system, leave it off the "
+                    "map and record it in the inventory as omitted"
+                )
 
     labelled = sum(1 for e in edges if e.get("label"))
     if edges and labelled / len(edges) > LABEL_RATIO_CAP:
@@ -206,7 +359,48 @@ def describe_weak_line(text):
     if s.rstrip(":") in {"const (", "var (", "import (", "type (", "(", ")", "{", "}",
                          "};", "});", "]", "[", "else", "try", "end"}:
         return "a bare block-opener"
+    # The same thing wearing a brace or a keyword — `try {`, `} catch (e) {`,
+    # `} else {`. Hand-audits of `evidence` refs kept landing here.
+    # The keyword alternation is the whole guard here: a real call can't match
+    # it, so no extra paren test is needed (and one wrongly spared `} catch (e) {`).
+    if re.fullmatch(r"[})\]]*\s*(try|do|finally|else(\s+if\s*\([^)]*\))?|"
+                    r"catch\s*(\([^)]*\))?)\s*[{]?\s*[};]*", s):
+        return "a bare block-opener"
+    # An object-literal key opening a nested literal (`orderBy: {`, `data: {`,
+    # `where: {`) is the inside of a call, not the call — the reader lands mid
+    # argument with no idea which function they are in.
+    if re.fullmatch(r"[\w$'\"\[\]. ]+\s*:\s*[{\[]\s*,?", s):
+        return "an argument key, not the call"
     return None
+
+
+def describe_ref(ref, repo_root):
+    """Why a `path:line` ref can't be trusted, or None if it lands somewhere real.
+
+    Used for edge `evidence`, which is an attestation that someone read the
+    performing line. An attestation that points nowhere is worth less than no
+    attestation at all, since it reads as verified — so the path, the line
+    number and the line's substance are all checked before the edge is excused.
+    """
+    rel, _, line = ref.partition(":")
+    target = repo_root / rel
+    if not target.exists():
+        return f"does not exist in {repo_root}"
+    if not line:
+        return ("names no line — evidence is a specific call site "
+                "(`path.ts:120`), not a file")
+    if not line.isdigit():
+        return f"has a non-numeric line {line!r}"
+    if not target.is_file():
+        return "points at a directory with a line number"
+    try:
+        lines = target.read_text(errors="replace").splitlines()
+    except OSError:
+        return None
+    if int(line) > max(len(lines), 1):
+        return f"points past the end of the file ({len(lines)} lines)"
+    what = describe_weak_line(lines[int(line) - 1]) if int(line) >= 1 else None
+    return f"lands on {what} line — point at the call itself" if what else None
 
 
 def check_source_refs(nodes, repo_root):
@@ -269,6 +463,359 @@ def check_source_refs(nodes, repo_root):
             )
         ok += 1
     return warnings, checked, ok, weak
+
+
+def edge_source(node, repo_root):
+    """Text of the file(s) the node's sourceRef names, and whether it is partial.
+
+    Returns (text, truncated). A container pointing at a directory is checked
+    against everything under it: the claim is about the container, so any member
+    performing it counts. Big directories are capped for speed — and a capped
+    scan that finds nothing has not shown the evidence is absent, only that it
+    was not in the part we read. Reporting "no evidence" there would hand a
+    false clean bill to exactly the containers a monorepo map leans on hardest
+    (`features/bookings` passed vacuously this way), so the caller is told the
+    scan was partial and reports those as inconclusive instead.
+    """
+    ref = (node.get("sourceRef") or "").partition(":")[0]
+    if not ref:
+        return None, False
+    target = repo_root / ref
+    files, truncated = [], False
+    if target.is_file():
+        files = [target]
+    elif target.is_dir():
+        found = [f for f in sorted(target.rglob("*"))
+                 if f.is_file() and f.suffix in EDGE_SOURCE_EXT]
+        truncated = len(found) > DIR_FILE_CAP
+        files = found[:DIR_FILE_CAP]
+    if not files:
+        return None, False
+    chunks = []
+    for f in files:
+        try:
+            chunks.append(f.read_text(errors="replace"))
+        except OSError:
+            pass
+    return ("\n".join(chunks) if chunks else None), truncated
+
+
+def code_only(text):
+    """Drop comments and docstrings.
+
+    The second recurring wrong-edge shape is an arrow copied out of an
+    architecture diagram: `analyze.py`'s docstring describes a
+    prefilter -> classifier -> scorer funnel that no module implements, and the
+    map drew it. If a prose mention of the target counts as evidence, the check
+    endorses exactly the source the error came from — so only code counts.
+    """
+    out, in_block, block_end = [], False, None
+    for line in text.splitlines():
+        s = line.strip()
+        if in_block:
+            if block_end in s:
+                in_block = False
+            continue
+        for opener, closer in (('"""', '"""'), ("'''", "'''"), ("/*", "*/"),
+                               ("<!--", "-->")):
+            if s.startswith(opener) and s.count(opener) == 1 and closer not in s[len(opener):]:
+                in_block, block_end = True, closer
+                break
+        if in_block:
+            continue
+        # `*` catches the continuation lines of a /* */ block, but a crontab
+        # entry starts with one too — and a schedule line is the ONLY evidence a
+        # cron edge ever has, so dropping it as a comment makes every true
+        # `cron -> script` edge in a crontab read as unevidenced.
+        if CRON_RE.match(s):
+            out.append(line)
+            continue
+        if s.startswith(("//", "#", "*", "--", ";;", '"""', "'''", "/*", "<!--")):
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def store_names(node):
+    """Identifier-shaped names for a store: the table, not the prose label."""
+    names = set()
+    for v in (node.get("label"), node.get("sub"), node.get("id")):
+        for t in re.split(r"[^A-Za-z0-9_]+", v or ""):
+            if len(t) >= 4:
+                names.add(t.lower())
+    # "Raw items" and "t-raw-items" are both `raw_items` at the call site.
+    lbl = re.sub(r"[^a-z0-9]+", "_", (node.get("label") or "").lower()).strip("_")
+    if len(lbl) >= 4:
+        names.add(lbl)
+    nid = re.sub(r"^t[-_]", "", (node.get("id") or "").lower()).replace("-", "_")
+    if len(nid) >= 4:
+        names.add(nid)
+    for key, drivers in STORE_DRIVERS.items():
+        if key in f"{node.get('id')} {node.get('label')} {node.get('domain')}".lower():
+            names.update(drivers)
+    return names
+
+
+def is_db_store(node):
+    """Whether reaching this store should look like a query in the caller.
+
+    `store` covers both a Postgres table and a directory of files on disk, and
+    only the first has a call shape worth insisting on — demanding a db client
+    of a script that writes a folder would flag every true edge it has.
+    """
+    text = f"{node.get('id')} {node.get('label')} {node.get('sub')} {node.get('domain')}".lower()
+    if node.get("domain") or any(k in text for k in STORE_DRIVERS):
+        return True
+    if re.search(r"\b(db|database|table|tables|schema|index|cache|queue|bucket)\b", text):
+        return True
+    # A store whose ref is the schema that defines it is a database.
+    return bool(re.search(r"(schema|migration|models?)\b|\.sql$",
+                          (node.get("sourceRef") or ""), re.I))
+
+
+def name_hint(names, k=4):
+    """The names worth showing in a warning: most specific first.
+
+    An alphabetical head is nearly useless — it surfaces 'Access' and '3.1k'
+    while `document/bulk-download`, the name that would actually settle the
+    question, falls off the end.
+    """
+    return sorted(names, key=lambda n: (-len(n), n))[:k]
+
+
+def symbolish(token):
+    """Whether a token is a name a caller types, not a word from a prose `sub`.
+
+    `streamText`, `check_gate`, `lib/storage` and `depot.yaml` are written
+    verbatim at a call site; `files`, `timeout` and `later` are English that
+    happens to appear in one. A leading digit rules out "3.1k lines".
+    """
+    if not token or token[0].isdigit():
+        return False
+    return ("_" in token or "/" in token or "." in token
+            or any(a.islower() and b.isupper() for a, b in zip(token, token[1:])))
+
+
+def module_names(node):
+    """How a caller would name this node in an import or a URL.
+
+    Both spellings matter: `scout/analyzer/classifier.py` is imported as
+    `scout.analyzer.classifier` and as `@/analyzer/classifier`, and an
+    `app/api/copilot/route.ts` is reached as `/api/copilot` — never as `route`.
+    """
+    ref = (node.get("sourceRef") or "").partition(":")[0]
+    names = set()
+    if not ref:
+        return names
+    p = Path(ref)
+    if ROUTE_FILE_RE.search(ref):
+        # Strip framework scaffolding to leave the URL a caller would fetch.
+        segs = [s for s in p.parent.parts
+                if s not in ("src", "app", "pages", "routes", "api")
+                and not (s.startswith("(") and s.endswith(")"))]
+        if segs:
+            names.add("/".join(segs))
+    elif p.stem not in ("index", "__init__", "mod", "main"):
+        names.add(p.stem)
+    names.add(p.name)
+    parts = [s for s in p.with_suffix("").parts if s not in (".", "src")]
+    if len(parts) >= 2:
+        tail = parts[-2:]
+        names.add("/".join(tail))
+        names.add(".".join(tail))
+    # A `sub` naming the symbol ("streamText", "POST /api/chat") is often the
+    # only thing the caller writes — but `sub` is free prose ("3.1k lines, panel
+    # layout", "File System Access API"), and mining it for bare words let
+    # common English stand in as evidence: six edges across three repos passed
+    # only because "local", "files" or "timeout" appeared somewhere in the
+    # caller. Keep the tokens a caller literally types — camelCase, snake_case,
+    # a path, a dotted name — and drop the prose.
+    for t in re.split(r"[^A-Za-z0-9_/.]+", node.get("sub") or ""):
+        if len(t) >= 4 and not t.isupper() and symbolish(t):
+            names.add(t)
+    # The id, and an acronym or one-word label, are usually the code's own name
+    # for the thing: a Jinja template calls `csrf_token()`, never `app.py`.
+    # Multi-word prose labels ("Scholarship catalog") are excluded — matching
+    # "catalog" anywhere would wave through the misattributions this looks for.
+    for t in re.split(r"[^A-Za-z0-9]+", node.get("id") or ""):
+        if len(t) >= 4:
+            names.add(t)
+    label = (node.get("label") or "").strip()
+    words = label.split()
+    for word in words:
+        t = re.sub(r"[^A-Za-z0-9_]", "", word)
+        if not t.isalnum() or not t[:1].isalpha():
+            continue
+        if (t.isupper() and len(t) >= 3) or (len(words) == 1 and len(t) >= 4):
+            names.add(t)
+    return {n for n in names if len(n) >= 3}
+
+
+def same_package(src, dst):
+    """Whether both nodes' refs live in one directory — one package's scope.
+
+    Only true for two plain files side by side. A container whose ref IS the
+    directory is excluded: an edge from the package as a whole to one of its own
+    files is a claim about internal structure, and skipping it would wave
+    through the container-borrows-a-member's-file mistake.
+    """
+    a = (src.get("sourceRef") or "").partition(":")[0]
+    b = (dst.get("sourceRef") or "").partition(":")[0]
+    if not a or not b or a == b:
+        return False
+    pa, pb = PurePosixPath(a), PurePosixPath(b)
+    # A ref with no suffix is a directory ref, i.e. the container case.
+    if not pa.suffix or not pb.suffix:
+        return False
+    return pa.parent == pb.parent and str(pa.parent) not in ("", ".")
+
+
+def check_edges(nodes, edges, repo_root):
+    """Look for the line that performs each edge's claim, in the caller's file.
+
+    `--check` cannot fault an edge — one is structurally valid as long as both
+    ends are node ids — so the map's actual claims about behaviour have always
+    been unverified. The recurring failure is not invention but misattribution:
+    a leaf module gets credited with work its driver performs (a pure function
+    with no db import drawn as reading a table), or a stage->stage arrow is
+    copied out of an architecture doc that no code implements.
+
+    Both leave the same fingerprint: the `from` node's file contains nothing
+    that could perform the claim. So ask, per target kind, the question a
+    reviewer would ask — does this file reach a database at all, does it import
+    that module, does it name that URL, does it mention that SDK — and report
+    the ones with no evidence as a worklist. A flag is not a verdict: an edge
+    that is real through a barrel re-export or a DI container will land here
+    too. It means *you* have to point at the line, not that the edge is wrong.
+
+    When you have pointed at it, record it as the edge's `evidence` ref
+    (`path.ts:120`) and this stops re-flagging it: the heuristic cannot see
+    through DI or a barrel, but a human or agent who read the line can, and
+    without somewhere to put that finding the same edges are re-litigated on
+    every run. The ref itself is still verified — a wrong path or a line past
+    the end of the file is reported, so `evidence` cannot silence a check by
+    being vague.
+    """
+    by_id = {n.get("id"): n for n in nodes}
+    findings, checked, attested, partial = [], 0, 0, 0
+    # A hub node is the `from` of many edges, and a container ref can be a whole
+    # directory — without this the same files are read once per edge.
+    source_cache = {}
+    for e in edges:
+        src, dst = by_id.get(e.get("from")), by_id.get(e.get("to"))
+        if not src or not dst:
+            continue
+        # An external service's behaviour is not in this repo: a scheduler that
+        # triggers a route is configured in its own dashboard or a vercel.json,
+        # not in a file we could point at.
+        if src.get("kind") == "external":
+            continue
+        # An `evidence` ref excuses an edge from the heuristic, so it is the one
+        # place a map can silence this check — and both cal.com arms silenced it
+        # completely by attesting every edge, after which one of them hand-found
+        # 20 of its own 69 refs wrong. So the ref is always validated, and the
+        # blanket case is reported at the end rather than passing quietly.
+        ev = e.get("evidence")
+        if isinstance(ev, str) and ev:
+            bad = describe_ref(ev, repo_root)
+            if bad:
+                findings.append((e, src, f"evidence {ev!r} {bad}"))
+            else:
+                attested += 1
+            continue
+        # Two nodes in the same directory are the same Go package (and the same
+        # Python module dir, the same Rails concern folder): the callee is in
+        # scope unqualified, so there is no import to find and no qualified name
+        # to grep. Asking for one is asking the file to import itself — three of
+        # one controller repo's blind spots were exactly this. Checked after
+        # `evidence` so an attestation is still validated wherever it appears.
+        if same_package(src, dst):
+            continue
+        if src.get("id") not in source_cache:
+            blob, truncated = edge_source(src, repo_root)
+            source_cache[src.get("id")] = (blob, code_only(blob) if blob else None,
+                                           truncated)
+        blob, code, truncated = source_cache[src.get("id")]
+        if blob is None:
+            continue
+        checked += 1
+        kind, why = dst.get("kind"), None
+
+        if kind == "store":
+            named = [n for n in store_names(dst) if n.lower() in blob.lower()]
+            reaches_db = bool(SQL_VERB_RE.search(blob) or DB_CALL_RE.search(blob))
+            # Config and .env are stores too, and nothing queries them.
+            config_ref = bool(CONFIG_REF_RE.search(dst.get("sourceRef") or ""))
+            imports_config = any(n.lower() in blob.lower() for n in module_names(dst))
+            # Almost nothing calls a store driver directly: a route reads R2 by
+            # importing the repo's own `lib/storage`, and the S3Client sits one
+            # file further in. A store's sourceRef names that fronting module,
+            # so importing it IS the evidence. Only path-shaped names count — a
+            # bare `settings` or `admin` matches any admin page's own prose and
+            # would wave through the misattributions this exists to catch.
+            imports_front = any(n.lower() in blob.lower()
+                                for n in module_names(dst) if "/" in n)
+            if imports_front:
+                pass
+            elif config_ref and (imports_config or ENV_READ_RE.search(blob)):
+                pass
+            elif not is_db_store(dst):
+                # A directory of artifacts is a store too, and writing to one
+                # looks like nothing in particular. Only the name can be checked.
+                if not named:
+                    why = f"never names {name_hint(store_names(dst))}"
+            elif not reaches_db:
+                why = ("no query, ORM call or db client anywhere in it — a file that "
+                       f"cannot reach {dst.get('label') or dst.get('id')!r} cannot "
+                       f"{e.get('kind') or 'touch'} it; the access is probably in "
+                       "whatever calls this")
+            elif not named:
+                why = f"reaches a database but never names {name_hint(store_names(dst))}"
+        elif kind in ("external", "model"):
+            names = {t for t in re.split(r"[^A-Za-z0-9_.\-]+",
+                                         f"{dst.get('sub')} {dst.get('label')}")
+                     if len(t) >= 4}
+            dom = (dst.get("domain") or "").split(".")[0]
+            if dom:
+                names.add(dom)
+            if names and not any(n.lower() in code.lower() for n in names):
+                why = f"no mention of {name_hint(names)}"
+        else:  # entry / cron / service / agent / tool — something in this repo
+            names = module_names(dst)
+            if names and not any(n.lower() in code.lower() for n in names):
+                imports = "\n".join(l for l in code.splitlines()
+                                    if IMPORT_LINE_RE.match(l))
+                why = (f"does not import or name {name_hint(names, 3)}"
+                       + ("" if imports else " (and imports nothing)"))
+        if why:
+            # A capped directory scan that found nothing proves nothing: say so
+            # rather than reporting the absence as a finding the reader can act
+            # on. These need a hand-check or an `evidence` ref, not an edit.
+            if truncated:
+                partial += 1
+                findings.append((e, src, (
+                    f"inconclusive — {src.get('sourceRef')!r} holds more than "
+                    f"{DIR_FILE_CAP} source files and only the first {DIR_FILE_CAP} "
+                    "were scanned; verify at the call site and record an `evidence` ref")))
+            else:
+                findings.append((e, src, why))
+
+    warnings = [
+        f"edge {e.get('from')} -{e.get('kind') or '?'}-> {e.get('to')}: "
+        f"{src.get('sourceRef')} {why}"
+        for e, src, why in findings
+    ]
+    total = checked + attested
+    if total >= 20 and attested > ATTESTED_SHARE_CAP * total:
+        warnings.append(
+            f"{attested} of {total} edges carry an `evidence` ref "
+            f"({attested / total:.0%}) — at that share the heuristic never ran, and "
+            "a check that is switched off reports the same clean line as one that "
+            "passed. `evidence` is for the few edges a text scan cannot see (DI "
+            "containers, barrel re-exports, generated registries); let the rest be "
+            "checked"
+        )
+    return warnings, checked, len(findings), attested, partial
 
 
 def fill(template, values):
@@ -345,16 +892,17 @@ def check_inventory(inv_path, nodes):
         # Only bullets are inventory items; headings and prose are scaffolding.
         if not s.startswith(("- ", "* ")) or s.endswith(":"):
             continue
+        hits = [t for t in BACKTICKED_RE.findall(s) if t in ids]
         named = INVENTORY_REF_RE.findall(s)
-        if named:
-            unknown = [r for r in named if r not in ids]
-            if unknown:
-                warnings.append(
-                    f"{inv_path.name}:{i} points at node id(s) {unknown} that the map "
-                    "does not contain — the inventory and the map disagree"
-                )
-            else:
-                mapped += 1
+        if hits:
+            mapped += 1
+        elif named:
+            # Keyword-form disposition, but every id it names is missing from
+            # the map: that is a disagreement, not a missing disposition.
+            warnings.append(
+                f"{inv_path.name}:{i} points at node id(s) {sorted(set(named))} that "
+                "the map does not contain — the inventory and the map disagree"
+            )
         elif OMITTED_RE.search(s):
             omitted += 1
         else:
@@ -385,6 +933,9 @@ def main():
                                    "(default: inferred when the atlas lives in <repo>/.atlas/)")
     ap.add_argument("--no-source-check", action="store_true",
                     help="skip verifying that sourceRef paths exist")
+    ap.add_argument("--edges", action="store_true",
+                    help="look for the line that performs each edge's claim in the "
+                         "`from` node's file, and list the edges with no evidence")
     ap.add_argument("--inventory", nargs="?", const="", metavar="PATH",
                     help="diff the coverage inventory against the map "
                          "(default: inventory.md beside atlas.json)")
@@ -411,13 +962,33 @@ def main():
             source_note = f", {ok}/{checked} sourceRefs resolve (path and line)"
             if weak:
                 source_note += f", {weak} land somewhere unhelpful"
-            # Edges carry the map's claims about behaviour and nothing here can
-            # check one: an edge is valid as long as both ends are node ids.
-            edge_labels = sum(
-                1 for e in (data.get("graph") or {}).get("edges") or [] if e.get("label"))
-            if edge_labels:
-                source_note += (f"; {edge_labels} labelled edges assert behaviour "
-                                "that only you can verify")
+            # Edges carry the map's claims about behaviour, and validate() cannot
+            # fault one: an edge is valid as long as both ends are node ids.
+            if not args.edges:
+                source_note += ("; edges unchecked — run --edges to find the ones "
+                                "with no evidence in the caller's file")
+
+    edge_note = None
+    if args.edges:
+        if not repo_root:
+            warnings.append("--edges needs a repo root to read source from — pass --repo")
+        else:
+            graph = data.get("graph") or {}
+            edge_warnings, edges_checked, flagged, attested, partial = check_edges(
+                graph.get("nodes") or [], graph.get("edges") or [], repo_root)
+            warnings.extend(edge_warnings)
+            if edges_checked or attested:
+                edge_note = (f"edges: {edges_checked} checked against the caller's "
+                             f"source — {flagged} with no evidence found")
+                if attested:
+                    edge_note += f", {attested} attested by an `evidence` ref"
+                if partial:
+                    edge_note += (f" ({partial} of the {flagged} inconclusive rather "
+                                  "than absent — the container's directory was too "
+                                  "big to scan whole)")
+                if flagged:
+                    edge_note += ("; point at the line for each, or move the edge to "
+                                  "the node whose file performs it")
 
     inv_note = None
     if args.inventory is not None:
@@ -432,15 +1003,19 @@ def main():
 
     for w in warnings:
         print(f"warning: {w}", file=sys.stderr)
+    if edge_note:
+        print(edge_note, file=sys.stderr)
     if errors:
         for e in errors:
             print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
     if args.check:
-        # The labelled edges are exactly the claims nothing here can check, so
-        # print them as a worklist rather than making the reader re-derive it
-        # from the JSON — the verification sweep should be mechanical.
-        labelled = [e for e in (data.get("graph") or {}).get("edges") or [] if e.get("label")]
+        # Labelled edges are claims a reader will trust, so print them as a
+        # worklist — but only when --edges hasn't already produced a sharper one,
+        # since a list of every labelled edge next to a list of the suspect ones
+        # just dilutes the suspect ones.
+        labelled = ([] if args.edges else
+                    [e for e in (data.get("graph") or {}).get("edges") or [] if e.get("label")])
         if labelled:
             print("labelled edges to verify at a call site:", file=sys.stderr)
             for e in labelled:

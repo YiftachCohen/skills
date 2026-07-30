@@ -1334,6 +1334,9 @@
   function edgeParticleColor(kind) {
     if (kind === "writes") return "var(--store)";   // warm
     if (kind === "reads") return "var(--tool)";      // cool
+    // An enqueued hand-off is where the flow stops being synchronous, which is
+    // the first thing you want to know when the far end never ran.
+    if (kind === "enqueues") return "var(--cron)";   // amber, like scheduled work
     return "var(--accent)";                          // calls / triggers / default
   }
   function rebuildParticles() {
