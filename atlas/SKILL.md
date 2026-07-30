@@ -34,14 +34,21 @@ HTML file on disk.
    `evals/legibility/stats.py` additionally measures the *opening* view (hub
    fan-out, drawn-edge density, label ratio after containers collapse) — worth
    running on anything large.
-6. **Render** once, at the end:
+6. **Verify the sentences the checks can't** — see "Details" below. A green
+   `--check` says the map is well-formed, not that it is true: in one audited
+   map ten of twelve load-bearing `detail` claims were wrong with every check
+   passing, one asserting the opposite of the code. Take the counted-claims
+   worklist `--check` prints, plus any sentence asserting "only", "no X", or a
+   security posture, and refute each against the code. This is the step that
+   decides whether the map is trustworthy.
+7. **Render** once, at the end:
    ```bash
    python3 /abs/path/to/skill/scripts/render.py /abs/repo/.atlas/atlas.json \
      --repo /abs/repo --open
    ```
    Drop `--open` when there's no browser (headless, CI, a sandboxed run); the
    file is written either way.
-7. **Report** the file paths and a few summary lines — counts, main flows,
+8. **Report** the file paths and a few summary lines — counts, main flows,
    anything surprising. Don't echo the JSON back. `atlas.html` is renderer
    output, always safe to delete and regenerate; `atlas.json` is yours.
 
@@ -112,9 +119,9 @@ don't write them. `project.date` = today.
 
 | field | rule |
 |---|---|
-| `kind` | one of `entry` (route/page/CLI/webhook), `cron` (scheduled job), `service` (a subsystem that performs the product's own work at runtime — not a catch-all for "internal", see Kind discipline), `agent` (an LLM call the product makes), `model` (the model behind it — an actual model id), `tool` (**a function a model can call**: a `tool({...})` definition, an MCP server tool), `store` (DB/cache/index/config/disk), `external` (3rd-party API). Kinds drive the layout lanes (Entry points → Services & agents → Models & tools → Data & external), so choose accurately. A single-shot LLM call with no loop and no tools is still an `agent`, so its model edge reads correctly — say what it really is in `sub` ("single-shot classify"). |
+| `kind` | one of `entry` (route/page/CLI/webhook), `cron` (a **job**: work triggered from outside any request — a schedule *or* a queue, so a celery task, a job runner handler and a pub/sub consumer are `cron` alongside a `schedule:` block, with what triggers it in `sub`), `service` (a subsystem that performs the product's own work at runtime — not a catch-all for "internal", see Kind discipline), `agent` (an LLM call the product makes), `model` (the model behind it — an actual model id), `tool` (**a function a model can call**: a `tool({...})` definition, an MCP server tool), `store` (DB/cache/index/config/disk), `external` (3rd-party API). Kinds drive the layout lanes (Entry points → Services & agents → Models & tools → Data & external), so choose accurately. A single-shot LLM call with no loop and no tools is still an `agent`, so its model edge reads correctly — say what it really is in `sub` ("single-shot classify"). |
 | `parent` | optional, max depth 2: children render inside their container, collapsed with a `+N` badge and expanding in place. A container with a single child usually wants to be one node. When the real hierarchy runs deeper — app → feature → route in a monorepo — keep the two levels a teammate names out loud (usually feature as container, routes as children) and compress the rest: the outer level becomes a `group`, the inner detail a child's `sub`. Don't invent a middle tier just to have one. |
-| `group` | optional, <=24: nodes sharing a group render as one labeled stack. Group by feature/domain the way a team talks ("Billing"), never by file layout; hub nodes stay ungrouped. The viewer puts a group in its members' median lane, so one spanning kinds pulls nodes out of their semantic column — a real cost, worth paying when the team genuinely names the thing as one unit. No groups at all beats a forced one. |
+| `group` | optional, <=24: nodes sharing a group render as one labeled stack. Group by feature/domain the way a team talks ("Billing"), never by file layout; hub nodes stay ungrouped. One carve-out: when a backend has **two parallel service layers** — an execution engine and the request-path CRUD that authors and drives it, which both pass the runtime test and so are both `service` — the layer is what a teammate names out loud ("core" vs "services"), and `group` is the only thing that can tell them apart. Use it there, and nowhere else that a directory name is the answer. The viewer puts a group in its members' median lane, so one spanning kinds pulls nodes out of their semantic column — a real cost, worth paying when the team genuinely names the thing as one unit. No groups at all beats a forced one. |
 | edge `kind` | optional, prefer setting it: `calls`/`reads`/`writes`/`triggers`/`enqueues`, revealed on flow trace. Two nodes can have more than one edge — a service that both reads and writes a store gets both, not a compromise label. Use `enqueues` for a hand-off that returns before the work happens (a task queue, a job runner, a pub/sub publish): it is where the flow stops being synchronous, which is the first thing a reader needs when the far end never ran. |
 | edge `label` | optional, <=24, always visible — spend it on the few relationships that would surprise a reader ("charges on trial end"). See the label budget below. |
 | edge `evidence` | optional `path:line` — the call site you read that proves this edge. Records a verification the text heuristic can't repeat (DI, barrel re-exports, generated registries), so `--edges` stops re-flagging it. Use it for the few edges that need it, not as a default: attesting everything switches the check off, and `--check` warns past 80% attested. |
@@ -133,9 +140,12 @@ something. When nothing else seems to fit, one of these does:
 
 - A **UI surface** — screen, panel, component tree, client-side state — belongs
   to the entry point that mounts it, as a child of that `entry`, and the child
-  carries kind `entry` too: the header pills count children, so a UI tree filed
-  as `service` inflates the service count into a lie about the product. A kit
-  shared by several entries is one node, not a container of its components.
+  carries kind `entry` too: the header pills count children (every kind but
+  `store`, where a nested node is part of the same engine), so a UI tree filed
+  as `service` inflates the service count into a lie about the product. The pill
+  tooltip carries the top-level count beside the total, which is the fastest way
+  to see whether a kind is being used as a bucket. A kit shared by several
+  entries is one node, not a container of its components.
 - **Build, bundling, release and CI** hang off whatever triggers them: an
   `entry` for push/dispatch, a `cron` for a `schedule:` block.
 - A **third-party product you read or write** is `external`, even though the
@@ -155,9 +165,21 @@ something. When nothing else seems to fit, one of these does:
   is a stop, and the hub rule prunes its edges, not its node.
 - **Types, constants and vocabulary** perform nothing and are never nodes; fold
   them into the node that uses them.
+- **Boot wiring** — an `init_app` that calls someone's `init()` behind an env
+  check, an instrumentation hook, a middleware registration — moves none of the
+  product's own data and is never a node. Map the thing it wires up (the
+  `external` it ships to) and drop the wiring. A 40-line file whose whole body
+  is `if DSN: sdk.init(...)` is the giveaway.
 
 What survives is what a teammate names when asked what the product *does*: an
 eligibility engine, an export pipeline, a scan pipeline.
+
+**Stages are not services.** A step that only ever runs as part of one parent
+flow — extract → split → embed → load, or generator → runner → task pipeline —
+is a stage, not an independently callable subsystem. Stages are fine as
+children, but say what they are in `sub` ("step 2 of 5", "indexing only") so the
+reader does not read a phase of one pipeline as a service another caller could
+reach. If nothing outside the parent ever calls it, it is a stage.
 
 **Granularity.** A kind says what a node *is*; it doesn't say how finely to
 slice, and left unstated the same repo maps three different ways. Two rules
@@ -167,11 +189,23 @@ settle the cases that actually diverged — three runs over one monorepo produce
 - **One `store` per datastore engine**, not per table. Postgres is one node;
   tables, collections and indexes are `children` of it when they earn their own
   line. Two Postgres databases with separate connection strings are two engines
-  and two nodes; two schemas in one database are not.
-- **One `cron` per job** — the thing that runs — with the schedule in `sub`
-  ("Vercel · every 5m"). Not one per cadence, and not one node for all of them.
-  Jobs that share a schedule *and* a handler merge with a count ("6 reminder
-  crons"); jobs that merely run at the same time do not.
+  and two nodes; two schemas in one database are not. Nesting them is safe: the
+  header counts a store inside a store as part of that engine, not as another
+  place data lives, so seven table groups under one database still read as one
+  store. Every other kind nests real instances and is counted in full.
+- **One `cron` per job** — the thing that runs — with the trigger in `sub`
+  ("Vercel · every 5m", "celery · queue: dataset"). Not one per cadence, and not
+  one node for all of them. Jobs that share a trigger *and* a handler merge with
+  a count ("6 reminder crons"); jobs that merely run at the same time do not.
+  The two halves of one mechanism take the same kind: a poller that finds due
+  work and the handler that executes it are both `cron`, and splitting them
+  across kinds — poller `cron`, executor `service` — hides that they are one
+  thing. If an `enqueues` edge points at it, it is a job.
+- **One node per client, not per endpoint.** N classes that differ only in which
+  path they call on the same target are one node with the count in `sub`, the
+  same way 20 vector backends are one `store`. Five typed clients over one
+  daemon read as five subsystems and are one channel; the swap test catches it —
+  replace any one and the flow still runs from your code to that daemon.
 
 The same instinct generalises: slice by what the system has one of, not by what
 happens to be convenient — and when merging, say so in `sub` so the reader knows
@@ -222,7 +256,11 @@ backticks**, so the claim can be checked rather than believed:
 Not `— node (route trees)` or `— mapped`: a disposition that doesn't name an id
 reads as reconciliation without being it, and it is how a whole subsystem goes
 missing from a map whose inventory looked complete. `--inventory` reads these
-back, verifies every id exists, and counts what was never dispositioned:
+back, verifies **every** id on the line exists, and counts what was never
+dispositioned. A line that names several ids is where this bites: merge two
+nodes into one and the dispositions still name both, so the ids that no longer
+exist read as reconciled. Re-run `--inventory` after any pass that deletes or
+merges nodes, not just after writing the map:
 
 ```bash
 # inventory: 83 items — 73 mapped, 10 omitted, 0 unreconciled
@@ -301,13 +339,73 @@ one hop, and every one looked correct from the import block. Four shapes:
   the map exists to tell. Give it one node and only load-bearing edges: past a
   dozen edges on one node in the opening view its fan stops being followable,
   which is the signal to prune the ones drawn from theme ("everything reads
-  config"). Treat arrows *into* a hub as the highest-risk claims on the map — it
+  config"). **The direction tells you which hubs to prune**: a node with many
+  edges in and *none* out is a pure sink — "everything persists", "everything
+  logs" — and that fan is theme, not story, so keep only the writes that shape
+  the product. One map had a Postgres node with 17 inbound and 0 outbound;
+  cutting it to 6 removed a whole tier of visual noise and lost nothing a reader
+  wanted. A hub with traffic in both directions is usually a real dispatcher and
+  its fan *is* the point — leave it, and say so in your summary rather than
+  pruning a true story to satisfy a threshold. `evals/legibility/stats.py`
+  prints the in/out split for every hub over the limit. Treat arrows *into* a hub as the highest-risk claims on the map — it
   is the box whose contents everyone assumes and nobody checks. Verify each one
   or leave it out.
 
 Point every edge at the most specific node that's true — the viewer re-routes
 and merges edges automatically when a container is collapsed. Draw from a
 container only when every child does the same thing.
+
+## Details — the claims nothing checks
+
+`--check` verifies structure, `--edges` verifies edges, `--inventory` verifies
+coverage. **Nothing verifies a `detail` sentence**, and it is the field a reader
+actually reads — the controlled pair of maps that answered 16/16 versus 10/16
+differed in `detail`, not in boxes. One map was audited with every automated
+check green: **ten of its twelve load-bearing sentences were wrong or
+overstated**, and one asserted the exact opposite of the code. Structural
+validity says nothing about truth.
+
+So run one adversarial pass over the sentences a reader would *act* on: security
+posture, fail-open vs fail-closed, "X is the only…", "there is no Y", and every
+count. Give the job to a subagent and tell it to **refute**, with instructions to
+default to "refuted" when the evidence is ambiguous — asked to *check* the same
+claims, an agent confirms them.
+
+Six shapes recur, all of them honest mistakes:
+
+- **A sentence scoped to the file you read, stated about the repo.** "Hardcodes
+  no model id" was true of `model_manager.py` and false of
+  `hosting_configuration.py` forty lines away. Say which file you verified, or
+  grep the whole tree before writing the unconditional form.
+- **"There is no Y", from a single negative check.** One `ls` of a missing
+  directory became "ships no server route handlers"; a tree-wide search for the
+  *pattern* (`route.ts`, not `app/api/`) found one. An absence claim needs a
+  search for the shape of the thing, not for the place you expected it.
+- **"X is the single chokepoint."** The most seductive sentence in a map, and
+  the easiest to disprove: one repo's "single" SSRF proxy had five modules
+  building their own HTTP clients beside it. Before writing "only" or "all
+  traffic goes through", grep for the *mechanism* — every `httpx.Client`, every
+  `requests.` — not for the chokepoint you already found.
+- **Generalising a decorator family from one member.** A guard family was
+  described as failing open when billing was off; two of its five members abort
+  403 in exactly that case. Read every member before writing one sentence about
+  all of them, or name the member you read.
+- **A count from an impression.** 8 of 32 counts in one map were wrong. A count
+  is a claim: run the command that produces it and paste that number.
+  `--check` lists every counted claim as a worklist for exactly this.
+- **A dependency claim made from the manifest alone.** A package "pinned in
+  pyproject and unused" was in fact a `[tool.uv] override-dependencies` entry —
+  not a dependency at all — and the lockfile showed it installed by default
+  through another package. Manifests declare intent; the lockfile says what
+  ships. Read both.
+
+Over-crediting a moved dependency is the same error one level up: "the package
+owns the node registry" when registry composition was still local. When a
+subsystem moves out, check what stayed behind before describing the move.
+
+A `detail` inherits the authority of the map. Prefer the narrow true sentence to
+the sweeping one: "14 of 16 are flag-gated, about 7 run by default" is worth
+more than "every job is flag-gated", and it is the sentence that survives.
 
 ## Investigating
 
@@ -336,11 +434,14 @@ Work command-first at every size: directory listings for structure, grep for
 locations, and open only the files that define agents, tools, services and
 schemas — manifests and grep hits answer most of the map.
 
-- **Main flows first**: entry points (routes, webhooks, pages, CLIs), scheduled
-  jobs (crons/queues/workers), and the stores/services they read and write.
-  Scheduled work hides in CI — grep `.github/workflows/` (or the equivalent) for
-  `schedule:`/`cron` before concluding a repo has no `cron` nodes; a nightly job
-  is a real actor even when no application code schedules anything.
+- **Main flows first**: entry points (routes, webhooks, pages, CLIs), jobs
+  (crons/queues/workers — all of them `cron`), and the stores/services they read
+  and write. Scheduled work hides in CI — grep `.github/workflows/` (or the
+  equivalent) for `schedule:`/`cron` before concluding a repo has no `cron`
+  nodes; a nightly job is a real actor even when no application code schedules
+  anything. A queue-heavy backend hides the same work in the other direction:
+  every `.delay()`/`.apply_async()` target is a job, and left as `service` they
+  swamp the map — one Celery repo produced 18 of them.
 - **Business logic**: the internal services and pipelines the product is built
   from (billing, ingestion, domain services) — these become `service` nodes,
   with the interesting sentence on the edge ("charges Stripe on trial end").
