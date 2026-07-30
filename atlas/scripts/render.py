@@ -72,9 +72,11 @@ CRON_RE = re.compile(r"^[\d*/,\-]+(\s+[\d*/,\-]+){4}(\s|$)")
 # be reported as a disagreement rather than lumped in as undispositioned.
 INVENTORY_REF_RE = re.compile(
     r"\b(?:node|child|children|sub|detail|container|group|edge)s?\b"
-    r"[^`\n]{0,16}`([A-Za-z0-9_-]+)`")
+    r"[^`\n]{0,16}((?:`[A-Za-z0-9_-]+`(?:\s*(?:,|and|or|\+)\s*)?)+)")
 BACKTICKED_RE = re.compile(r"`([A-Za-z0-9_-]+)`")
 OMITTED_RE = re.compile(r"\bomitted\b", re.I)
+# A cardinal followed by the thing it counts: "30 backends", "~140 tables".
+COUNT_RE = re.compile(r"(?<![\w.:/])(~?\d[\d,]*)\s+([A-Za-z][\w-]*)")
 
 # --- edge evidence (see check_edges) ------------------------------------------
 # What reaching a store looks like in source, in the languages an atlas points at.
@@ -218,6 +220,7 @@ def validate(data):
     # maps peak in the 40s, and a genuinely service-heavy backend has headroom
     # to ~60%. Children count too — the header pills count every node, so a UI
     # tree filed as `service` misreports the product even while drawn collapsed.
+    # The share is checked at two denominators below, top level first.
     # `tool` is an AI kind — a function a model can call — and it is the one
     # kind whose English name invites the wrong reading, so an SDK package or a
     # CLI lands there and the header then advertises "2 tools" on a repo with no
@@ -232,17 +235,57 @@ def validate(data):
             "package is not a tool: it belongs to whatever mounts or calls it"
         )
 
+    # Count the share at the TOP LEVEL first: that is the view a reader meets,
+    # and it is where the residual bucket shows. Counting over all nodes hides
+    # it, because route and UI children inflate the denominator — one 295-node
+    # map sat at 45% of all nodes, silent, while 22 of its 40 top-level nodes
+    # (55%) were `service`, spanning six unrelated roles.
     svc = sum(1 for n in nodes if n.get("kind") == "service")
+    top_svc = sum(1 for n in top_level if n.get("kind") == "service")
+    advice = (
+        "the residual-bucket signature. Recheck each against Kind discipline in "
+        "SKILL.md: UI trees are `entry` children, queue and schedule handlers "
+        "are `cron`, build/CI hangs off its trigger, third-party products are "
+        "`external`, boot wiring is not a node at all, and libraries and "
+        "per-endpoint clients fold into their callers or one hub node"
+    )
+    if len(top_level) >= 12 and top_svc > 0.5 * len(top_level):
+        warnings.append(
+            f"{top_svc} of {len(top_level)} TOP-LEVEL nodes are `service` "
+            f"({100 * top_svc // len(top_level)}%) — {advice}"
+        )
     if len(nodes) >= 30 and svc > 0.6 * len(nodes):
         warnings.append(
-            f"{svc} of {len(nodes)} nodes are `service` ({100 * svc // len(nodes)}%) — "
-            "the residual-bucket signature. Recheck each against Kind discipline "
-            "in SKILL.md: UI trees are `entry` children, build/CI hangs off its "
-            "trigger, third-party products are `external`, libraries fold into "
-            "callers or one hub node"
+            f"{svc} of {len(nodes)} nodes are `service` "
+            f"({100 * svc // len(nodes)}%) — {advice}"
         )
 
+    # An edge from a child to its own container is meaningless: the container
+    # is an abstraction over that very child, so the viewer collapses it to a
+    # self-loop. It has two causes and both are worth catching. Either the edge
+    # was rewired onto the parent when a sibling was merged away — the arrow now
+    # points at something that was never its target — or the hierarchy is
+    # inverted, and a wrapper that calls a subsystem got filed underneath it.
+    # Container -> child is the opposite case and usually right: that is a
+    # dispatch (a beat scheduler triggering its jobs, an engine picking a
+    # flavour), so only the child -> ancestor direction is flagged.
+    def _ancestors(nid):
+        seen, out = set(), []
+        while parents.get(nid) and nid not in seen:
+            seen.add(nid)
+            nid = parents[nid]
+            out.append(nid)
+        return out
+
     for i, e in enumerate(edges):
+        f, t = e.get("from"), e.get("to")
+        if f in id_set and t in id_set and t in _ancestors(f):
+            warnings.append(
+                f"edges[{i}] {f!r} -> {t!r} points at its own container — it "
+                "collapses to a self-loop. Either it was rewired onto the parent "
+                "when a sibling was merged away (drop it), or the containment is "
+                "inverted and the caller belongs outside the node it calls"
+            )
         for end in ("from", "to"):
             if e.get(end) not in id_set:
                 errors.append(f"edges[{i}].{end} = {e.get(end)!r} is not a node id")
@@ -870,6 +913,42 @@ def load_template():
     })
 
 
+def counted_claims(nodes):
+    """Nodes whose `sub`/`detail` assert a count a reader cannot check.
+
+    Cardinal-plus-noun only. HTTP statuses, RFC numbers, ports and versions are
+    dropped: they are identifiers, not counts, and listing them buries the real
+    ones.
+    """
+    NOISE = {
+        "when", "rather", "before", "accepted", "so", "not", "on", "if", "unless",
+        "and", "or", "to", "for", "with", "device", "code", "then", "instead",
+    }
+    out = []
+    for n in nodes:
+        text = " ".join(x for x in (n.get("sub"), n.get("detail")) if x)
+        seen = []
+        for m in COUNT_RE.finditer(text):
+            num, noun = m.group(1), m.group(2)
+            bare = num.lstrip("~").replace(",", "")
+            if noun.lower() in NOISE:
+                continue
+            # Do NOT filter on digit count: "137 tables" is HTTP-status-shaped
+            # and is a real claim, and dropping it silently is the failure this
+            # list exists to prevent. Filter on what follows the number instead.
+            # An exception class ("429 TooManyRequests") is CamelCase; an
+            # identifier (RFC 8628, port 5050) is a bare 4+ digit run, whereas a
+            # genuine large count is written with a separator ("1,519 files").
+            if noun[:1].isupper() and any(c.isupper() for c in noun[1:]):
+                continue
+            if "," not in num and bare.isdigit() and len(bare) >= 4:
+                continue
+            seen.append(f"{num} {noun}")
+        if seen:
+            out.append((n["id"], ", ".join(dict.fromkeys(seen))))
+    return out
+
+
 def check_inventory(inv_path, nodes):
     """Diff the coverage inventory against the map it was supposed to produce.
 
@@ -893,9 +972,21 @@ def check_inventory(inv_path, nodes):
         if not s.startswith(("- ", "* ")) or s.endswith(":"):
             continue
         hits = [t for t in BACKTICKED_RE.findall(s) if t in ids]
-        named = INVENTORY_REF_RE.findall(s)
+        # A disposition may name several ids ("children `a`, `b`, `c`"). Every
+        # one has to exist: a line whose first id is live and whose rest are
+        # stale used to pass as "mapped", so deleting a node during a merge left
+        # dead references that read as reconciliation. Stale is worse than
+        # absent — it looks checked.
+        named = [t for group in INVENTORY_REF_RE.findall(s)
+                 for t in BACKTICKED_RE.findall(group)]
+        dead = sorted({t for t in named if t not in ids})
         if hits:
             mapped += 1
+            if dead:
+                warnings.append(
+                    f"{inv_path.name}:{i} also names node id(s) {dead} that the map "
+                    "does not contain — a stale disposition reads as reconciled"
+                )
         elif named:
             # Keyword-form disposition, but every id it names is missing from
             # the map: that is a disagreement, not a missing disposition.
@@ -1020,6 +1111,17 @@ def main():
             print("labelled edges to verify at a call site:", file=sys.stderr)
             for e in labelled:
                 print(f"  {e['from']} -> {e['to']}  {e['label']!r}", file=sys.stderr)
+        counted = counted_claims((data.get("graph") or {}).get("nodes") or [])
+        if counted:
+            # A count is the most quotable thing in a map and the least checked:
+            # nothing here can confirm "30 backends" or "137 tables", and a
+            # reader has no way to doubt it. One audited map had 8 of 32 counts
+            # wrong. Print them as a worklist so each is checked against the
+            # command that produces it, not against an impression.
+            print(f"counted claims to verify ({len(counted)}) — run the command "
+                  "that produces each number:", file=sys.stderr)
+            for nid, claim in counted:
+                print(f"  {nid}  {claim}", file=sys.stderr)
         if inv_note:
             print(inv_note, file=sys.stderr)
         print(f"{atlas_path} is valid "
