@@ -12,13 +12,22 @@ python3 scripts/render.py .atlas/atlas.json [--open] [--check] [-o out.html]
 
 | flag | what it does |
 |---|---|
-| `--check` | validate and write nothing; also confirms every `sourceRef` resolves to a real file and to a line worth jumping to, naming the line to use instead when it lands on a comment, a blank or a bare block opener |
+| `--check` | validate and write nothing; also confirms every `sourceRef` resolves to a real file and to a line worth jumping to, naming the line to use instead when it lands on a comment, a blank or a bare block opener. Flags the `service` share at the **top level** as well as over all nodes, and any edge pointing at its own container. Prints a **counted-claims worklist** — every `sub`/`detail` asserting a number — because nothing here can verify "30 backends", and an audited map had 8 of 32 counts wrong |
 | `--edges` | looks in the `from` node's file for the line that performs each edge's claim, and lists the edges where nothing could |
-| `--inventory` | reads the dispositions in `.atlas/inventory.md` back, verifies each named id exists, and counts what was never dispositioned |
+| `--inventory` | reads the dispositions in `.atlas/inventory.md` back, verifies **every** id named on a line exists (a line whose first id is live and whose rest are stale used to pass), and counts what was never dispositioned |
 | `--repo` | repo root the `sourceRef`s are relative to (inferred from the `<repo>/.atlas/atlas.json` layout; pass it explicitly when the atlas lives elsewhere) |
 | `--no-source-check` | skip the `sourceRef` file check |
 | `--theme print` | bright editorial theme for embeds and printing (default `living`: near-black, animated) |
 | `--online-icons` | preset the Icons toggle on (favicons are opt-in; letter tiles render otherwise, so the file makes zero network requests by default) |
+
+## What none of these can tell you
+
+Every flag here checks *structure*: that a path resolves, an id exists, a caller
+mentions its callee. None reads a `detail` sentence, and that is the field a
+reader trusts most. One map passed `--check --edges --inventory` clean while ten
+of its twelve load-bearing sentences were wrong, including one that asserted the
+opposite of the code. A green run means well-formed, not true — see "Details" in
+SKILL.md for the adversarial pass that catches those.
 
 ## What `--edges` can and can't tell you
 

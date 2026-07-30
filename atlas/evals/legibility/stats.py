@@ -66,9 +66,12 @@ def main():
         m["labeled"] = m["labeled"] or bool(e.get("label"))
 
     degree = Counter()
+    indeg, outdeg = Counter(), Counter()
     for (f, t) in merged:
         degree[f] += 1
         degree[t] += 1
+        outdeg[f] += 1
+        indeg[t] += 1
 
     top_ids = {n["id"] for n in top}
     isolated = sorted(i for i in top_ids if degree[i] == 0)
@@ -86,8 +89,16 @@ def main():
         "opening_view_edges": len(merged),
         "opening_view_labeled_edges": labeled_top,
         "opening_view_label_ratio": round(labeled_top / len(merged), 3) if merged else 0,
-        "hubs": [{"id": i, "label": label[i], "visible_degree": d}
-                 for i, d in degree.most_common(5)],
+        # Every node over the threshold, not a fixed top-N: truncating at 5 hid
+        # a sixth hub in a 40-node map, and "the five worst" is not the question
+        # the reader has. The list stays sorted, so hubs[0] is still the busiest.
+        "hubs": [{"id": i, "label": label[i], "visible_degree": d,
+                  "in": indeg[i], "out": outdeg[i]}
+                 for i, d in degree.most_common()
+                 if d > MAX_VISIBLE_DEGREE][:20]
+        or [{"id": i, "label": label[i], "visible_degree": d,
+             "in": indeg[i], "out": outdeg[i]}
+            for i, d in degree.most_common(5)],
         "isolated_top_nodes": isolated,
         "containers": sorted(
             ({"id": c, "children": len(ids)} for c, ids in children.items()),
@@ -100,13 +111,37 @@ def main():
     warnings = []
     for h in stats["hubs"]:
         if h["visible_degree"] > MAX_VISIBLE_DEGREE:
+            # A pure sink — many edges in, none out — is the signature of a
+            # thematic fan rather than a story: "everything persists",
+            # "everything logs". Those are the edges to prune first, because
+            # none of them is the reason the reader opened the map. A hub with
+            # traffic in both directions is usually a real dispatcher and its
+            # fan is the point.
+            shape = ""
+            if h["out"] == 0 and h["in"] > MAX_VISIBLE_DEGREE:
+                shape = (f" — {h['in']} in, 0 out: a pure sink, which is the "
+                         "'everything writes here' fan. Keep the writes that "
+                         "shape the product and drop the rest")
             warnings.append(
                 f"hub: '{h['label']}' ({h['id']}) touches {h['visible_degree']} edges "
-                f"in the opening view (> {MAX_VISIBLE_DEGREE}) — look at whether its fan is readable")
+                f"in the opening view ({h['in']} in, {h['out']} out; > {MAX_VISIBLE_DEGREE})"
+                f"{shape or ' — look at whether its fan is readable'}")
     if len(merged) > MAX_TOP_EDGES:
         warnings.append(
             f"density: {len(merged)} distinct edges drawn at open (> {MAX_TOP_EDGES}) "
             f"for {len(top)} top-level nodes — the overview may read as a mesh")
+
+    # A group renders as a labeled stack, so a group of one is a label with no
+    # stack: it costs a line of chrome and buys nothing, and it can still drag
+    # its member out of its semantic lane. Counted over every node, not just the
+    # top level, because children carry groups too.
+    all_groups = Counter(n["group"] for n in nodes if n.get("group"))
+    lonely = sorted(g for g, c in all_groups.items() if c == 1)
+    if lonely:
+        warnings.append(
+            f"group of one: {lonely} — a group renders as a labeled stack, so a "
+            "single member is a label with no stack. Fold it into a neighbouring "
+            "group or drop the field")
     if merged and labeled_top / len(merged) > MAX_LABEL_RATIO:
         warnings.append(
             f"labels: {labeled_top}/{len(merged)} opening-view edges carry always-on labels "
