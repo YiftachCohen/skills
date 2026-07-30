@@ -23,6 +23,15 @@ Do NOT read files one by one — you will run out of context.
   came back invalid. Ask each for inventory lines for its own slice too;
   reconciliation is per-line, and the agent that read the code is the one who
   knows what it found.
+- **Tell subagents NOT to emit `evidence` or edge `label`.** Both are decisions
+  about the whole map that a slice cannot see: the label budget is counted at
+  the opening view, and attestation is only sound when it stays rare. Asked for
+  them, subagents mass-produce — one Go run's five slices returned ~200 labels
+  of which 20 survived, and two runs came back with evidence on 58% and 100% of
+  edges, which switches `--edges` off across the map before it ever runs. Have
+  them return the performing line as a plain field (`sawAt`) instead, then run
+  `--edges` on the merged map with no attestation at all and promote to
+  `evidence` only the true edges it flags.
 - **Write in a few appends** rather than one enormous Write call — a 200-node
   graph can exceed the output limit mid-JSON, and a truncated file means
   starting the write over.

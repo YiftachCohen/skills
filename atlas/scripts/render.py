@@ -18,7 +18,7 @@ import os
 import re
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 # The viewer ships as three source files so each stays editable on its own, and
 # is stitched back into ONE self-contained HTML file here. Nothing about the
@@ -651,6 +651,25 @@ def module_names(node):
     return {n for n in names if len(n) >= 3}
 
 
+def same_package(src, dst):
+    """Whether both nodes' refs live in one directory — one package's scope.
+
+    Only true for two plain files side by side. A container whose ref IS the
+    directory is excluded: an edge from the package as a whole to one of its own
+    files is a claim about internal structure, and skipping it would wave
+    through the container-borrows-a-member's-file mistake.
+    """
+    a = (src.get("sourceRef") or "").partition(":")[0]
+    b = (dst.get("sourceRef") or "").partition(":")[0]
+    if not a or not b or a == b:
+        return False
+    pa, pb = PurePosixPath(a), PurePosixPath(b)
+    # A ref with no suffix is a directory ref, i.e. the container case.
+    if not pa.suffix or not pb.suffix:
+        return False
+    return pa.parent == pb.parent and str(pa.parent) not in ("", ".")
+
+
 def check_edges(nodes, edges, repo_root):
     """Look for the line that performs each edge's claim, in the caller's file.
 
@@ -703,6 +722,14 @@ def check_edges(nodes, edges, repo_root):
                 findings.append((e, src, f"evidence {ev!r} {bad}"))
             else:
                 attested += 1
+            continue
+        # Two nodes in the same directory are the same Go package (and the same
+        # Python module dir, the same Rails concern folder): the callee is in
+        # scope unqualified, so there is no import to find and no qualified name
+        # to grep. Asking for one is asking the file to import itself — three of
+        # one controller repo's blind spots were exactly this. Checked after
+        # `evidence` so an attestation is still validated wherever it appears.
+        if same_package(src, dst):
             continue
         if src.get("id") not in source_cache:
             blob, truncated = edge_source(src, repo_root)

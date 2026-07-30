@@ -38,6 +38,19 @@ Once you have pointed at the line, put it in the edge's `evidence`
 line number, or a line past the end of the file is reported) but the heuristic
 stands down. The run prints how many edges are attested this way.
 
+Two shapes are skipped rather than flagged. An edge whose `from` and `to` refs
+are plain files in the *same directory* is one package's scope — the callee is
+visible unqualified, so there is no import to find; asking for one is asking a
+file to import itself. (A container whose ref is the directory is still
+checked.) And a `from` node of kind `external` has no code here to read.
+
+Expect roughly a 10% flag rate with about a 30% hit rate on a Go codebase — two
+unrelated Go repos landed within a point of each other. The 70% it cannot see
+are interface fields filled by DI, handlers registered into an ordered slice
+with no call site anywhere, generated clients across a network hop, child
+processes, and Kubernetes watches, which have no call site in either direction
+by design. Treat a clean result on those mechanisms as unproven, not verified.
+
 Flags reading *inconclusive* are different from the rest: the `from` node's
 `sourceRef` is a directory holding more than 40 source files, only the first 40
 were scanned, and nothing was found in that slice. That is not evidence of

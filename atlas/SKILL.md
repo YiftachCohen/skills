@@ -50,6 +50,25 @@ Re-running does not overwrite `atlas.json` for you. Default to a clean scan:
 the existing map and check `git log`/`git diff` since `project.date` rather than
 re-scanning — only when that date is recent and you wrote the map yourself.
 
+On the incremental path, three things repay the minute they cost:
+
+- **Run `--check` before you edit anything.** It turns the diff into a worklist:
+  a deleted file shows up as a dead `sourceRef`, and any warning it reports that
+  the diff didn't cause is one the previous run left you.
+- **A commit message is a doc, and the code-wins rule applies to it too** — with
+  more force here, because on this path the log is your primary input rather
+  than a footnote. One tested commit announced a subsystem's removal and deleted
+  none of it; the service, its scheduled task, its migrations and ~17 call sites
+  were all still live. Confirm each claim in the diff before believing it.
+- **Grep for the name of anything deleted.** A removed package leaves references
+  no check can see — a CI job still requiring it, a test config still pointing
+  at the missing directory, docs still telling users to import it. That debris
+  is a finding worth reporting even though the map itself is now correct.
+
+`evidence` refs are `path:line` pins, so an insertion above the call silently
+moves the line out from under them and `--check` still passes. One more reason
+to attest only the few edges that truly need it.
+
 Never read the viewer sources (`templates/*`) or the rendered `atlas.html`: all
 are fixed, and the CLI prints everything you need.
 
