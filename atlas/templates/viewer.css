@@ -72,9 +72,76 @@
     --btn-hover: color-mix(in srgb, var(--accent) 8%, var(--panel-2));
     --font-display: Georgia, "Times New Roman", serif;
   }
-  /* paper output is always the light print theme, regardless of active toggle */
+  /* ---------- theme: terrain (surveyed chart — aged paper, ink, sienna) ----------
+     Carried over from the cartographic experiment: the map should read like a
+     printed survey sheet, so the palette is earth pigment on foxed paper, the
+     type is a Palatino-class serif throughout (not just the display face), and
+     the chrome is ruled rather than rounded. Kind hues keep the SAME families
+     as the other themes (entry green, store red, external grey, …) — only the
+     pigment changes, so switching themes never relearns the legend. */
+  :root[data-theme="terrain"] {
+    --bg: #ECE3CF;
+    --panel: #F5EFDF;
+    --panel-2: #F0E7D2;
+    --border: #C9B98F;
+    --text: #453722;
+    --muted: #6D5A3E;
+    --faint: #93805F;
+    --accent: #8A4B2A;
+    --entry: #2C6E4B;
+    --cron: #9A7318;
+    --agent: #2A5A93;
+    --model: #6A4287;
+    --tool: #146F72;
+    --service: #454C8E;
+    --store: #A4432A;
+    --external: #77705F;
+    --edge: #8A7355;            /* road brown */
+    --edge-hl: var(--accent);
+    /* the grid reads as a chart graticule rather than graph paper */
+    --grid-1: rgba(69,55,34,.055);
+    --grid-2: rgba(69,55,34,.022);
+    --frame-1: rgba(69,55,34,.30);
+    --frame-2: rgba(69,55,34,.13);
+    --panel-glass: rgba(243,236,218,.94);
+    --shadow: 0 6px 24px rgba(60,40,10,.18);
+    --node-glow: 0 0 0 0 transparent;
+    --btn-hover: color-mix(in srgb, var(--accent) 10%, var(--panel-2));
+    /* foxing: the warm stains an old sheet picks up at its edges */
+    --ambient:
+      radial-gradient(900px 620px at 8% -6%, rgba(138,75,42,.07), transparent 62%),
+      radial-gradient(1000px 700px at 95% 6%, rgba(122,96,48,.06), transparent 60%),
+      radial-gradient(1200px 900px at 52% 116%, rgba(90,70,40,.07), transparent 65%);
+    --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --font-sans: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  }
+  /* A survey sheet is ruled, not rounded — square every panel and card. */
+  :root[data-theme="terrain"] :is(
+    .node, .stat, .chip, .group-box, .toolbar, .toolbar button, .toolbar select,
+    .toolbar input, .seg, .seg > button, #titleblock, #detail, #shortcuts,
+    #promptsheet, #ps-text, #detail .actions button, .ps-scope button,
+    .ps-foot button, .node .expander
+  ) { border-radius: 0; }
+  /* cartouche rule: the double border the legend block carried in the experiment */
+  :root[data-theme="terrain"] :is(#titleblock, #detail, #promptsheet) {
+    outline: 1px solid var(--border); outline-offset: 3px;
+  }
+  /* map captions are set in italic, the way a chart annotates itself */
+  :root[data-theme="terrain"] :is(.tagline, #detail p, #shortcuts .sc) { font-style: italic; }
+  /* no bloom on paper — the entry beacon breathes as a ring instead */
+  @keyframes entryRing {
+    0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--kind-color) 40%, transparent); }
+    50%      { box-shadow: 0 0 0 3px color-mix(in srgb, var(--kind-color) 30%, transparent),
+                           0 0 0 1px var(--kind-color); }
+  }
+  html.motion-on[data-theme="terrain"] .node[data-kind="entry"]:not(.hl):not(.selected):not(:hover) {
+    animation-name: entryRing;
+  }
+
+  /* paper output is always a light theme; terrain already is one, so it prints
+     as itself — only the screen-first themes are swapped for print's palette */
   @media print {
-    :root, :root[data-theme] {
+    :root:not([data-theme="terrain"]) {
       --bg: #F6F2EA; --panel: #FFFFFF; --panel-2: #FBF9F4; --border: #D8D2C4;
       --text: #17151A; --muted: #5C5750; --faint: #8B857B; --accent: #B4552D;
       --entry: #1E8A5B; --cron: #A87A16; --agent: #2456C4; --model: #7C3AC0;

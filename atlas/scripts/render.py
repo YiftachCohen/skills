@@ -3,7 +3,7 @@
 
 Usage:
   render.py [atlas.json] [-o OUT.html] [--open] [--check]
-            [--theme {living,print}] [--online-icons]
+            [--theme {living,print,terrain}] [--online-icons]
             [--repo PATH] [--no-source-check]
 
 Everything stays local: the JSON is inlined into a single HTML file that makes
@@ -53,7 +53,7 @@ JS_PLACEHOLDER = "/*__JS__*/"
 
 NODE_KINDS = {"entry", "cron", "agent", "model", "tool", "service", "store", "external"}
 EDGE_KINDS = {"calls", "reads", "writes", "triggers", "enqueues"}
-THEMES = ("living", "print")
+THEMES = ("living", "print", "terrain")
 SLUG_RE = re.compile(r"^[a-z0-9-]{1,48}$")
 
 # Graph-size ceilings. The legacy topModels/topTools/topIntegrations summary

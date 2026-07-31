@@ -17,11 +17,18 @@ python3 atlas/scripts/render.py .atlas/atlas.json --open
 
 ![Print theme — the editorial light theme, ideal for embeds and printing](docs/atlas-print.png)
 
+![Terrain theme — the surveyed-chart theme: aged paper, earth-pigment ink, serif throughout](docs/atlas-terrain.png)
+
 The viewer supports:
 
-- **two themes**: `living` (the animated near-black default) and `print` (a
-  bright editorial light theme for embeds and printing), switchable from the
-  toolbar or with `--theme`; paper output always uses the print theme
+- **three themes**: `living` (the animated near-black default), `print` (a
+  bright editorial light theme for embeds and printing) and `terrain` (a
+  surveyed-chart theme — aged paper, earth-pigment ink, ruled rather than
+  rounded chrome, serif throughout), switchable from the toolbar or with
+  `--theme`. Paper output uses the print theme, except from `terrain`, which is
+  already a paper theme and prints as itself. Every theme keeps the same kind
+  hues (entry green, store red, external grey, …), so switching never means
+  relearning the legend
 - **living motion**: flow particles travel along each edge in flow direction
   (color-coded by read/write/call), entry points pulse, and a **Play** button
   runs a guided tour that auto-walks each entry point's flow. Motion honors
