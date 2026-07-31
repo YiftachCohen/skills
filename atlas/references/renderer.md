@@ -20,6 +20,19 @@ python3 scripts/render.py .atlas/atlas.json [--open] [--check] [-o out.html]
 | `--theme print` | bright editorial theme for embeds and printing (default `living`: near-black, animated) |
 | `--online-icons` | preset the Icons toggle on (favicons are opt-in; letter tiles render otherwise, so the file makes zero network requests by default) |
 
+## Ruleset drift
+
+`--check` compares the map's `project.rules` against the `version:` in
+`SKILL.md`'s frontmatter and warns when the map is behind or unstamped. This is
+the one staleness a map cannot show on its own: the rules change what a *kind
+means* without moving a field, so an older map stays structurally valid while
+its kinds are wrong. It matters most on the incremental path, which re-reads
+existing kinds instead of re-deriving them. `CHANGELOG.md` says what changed
+between any two rulesets and therefore what needs re-scanning.
+
+`project.rules` is not the same as `version` inside the atlas, which describes
+the JSON shape and moves far less often.
+
 ## What none of these can tell you
 
 Every flag here checks *structure*: that a path resolves, an id exists, a caller

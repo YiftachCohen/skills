@@ -1,5 +1,6 @@
 ---
 name: atlas
+version: 3
 description: |
   Map a codebase into a beautiful, interactive, local-only architecture atlas — entry points, services, data flow, integrations, and any AI layer — rendered as a single self-contained HTML file with drill-down and flow tracing. No upload, no account, no network: nothing leaves the machine. Use whenever the user asks to "map this repo", "atlas this codebase", "scan the codebase", "visualize the architecture", "diagram this system", "show me how this project fits together", "draw the agent/model/tool graph", or wants a shareable-but-private architecture diagram.
 ---
@@ -55,7 +56,16 @@ HTML file on disk.
 Re-running does not overwrite `atlas.json` for you. Default to a clean scan:
 `rm .atlas/atlas.json .atlas/atlas.html` first. Take the incremental path — read
 the existing map and check `git log`/`git diff` since `project.date` rather than
-re-scanning — only when that date is recent and you wrote the map yourself.
+re-scanning — only when that date is recent, you wrote the map yourself, **and
+its `project.rules` matches the `version:` in this skill's frontmatter**.
+
+That last condition is the one that bites, because nothing about a stale map
+looks stale. The rules change what a *kind means* without moving a field, so an
+older map stays structurally valid while its kinds are now wrong — and the
+incremental path re-reads those kinds instead of re-deriving them, propagating
+them with every check green. When `--check` reports a `project.rules` mismatch,
+read `CHANGELOG.md`, and re-scan whatever the intervening entries touched rather
+than diffing on top of it.
 
 On the incremental path, three things repay the minute they cost:
 
@@ -89,7 +99,8 @@ are fixed, and the CLI prints everything you need.
     "slug": "lowercase-dashed (<=48)",
     "tagline": "one line (<=80, optional)",
     "iconDomain": "favicon domain for the project, e.g. acme.com (optional)",
-    "date": "YYYY-MM-DD"
+    "date": "YYYY-MM-DD",
+    "rules": 3
   },
   "graph": {
     "nodes": [
@@ -115,7 +126,9 @@ are fixed, and the CLI prints everything you need.
 
 The viewer derives the whole header from the graph — no summary fields to keep
 in sync. Legacy `stats`/`topModels`/`topTools`/`topIntegrations` are ignored;
-don't write them. `project.date` = today.
+don't write them. `project.date` = today. `project.rules` = the `version:` in
+this skill's frontmatter — it records which ruleset the map was authored
+against, and `--check` prints the number to use.
 
 | field | rule |
 |---|---|

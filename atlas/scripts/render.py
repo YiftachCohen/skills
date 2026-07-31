@@ -27,6 +27,24 @@ TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
 TEMPLATE = TEMPLATES / "viewer.html"
 CSS_TEMPLATE = TEMPLATES / "viewer.css"
 JS_TEMPLATE = TEMPLATES / "viewer.js"
+SKILL_MD = Path(__file__).resolve().parent.parent / "SKILL.md"
+
+
+def current_ruleset():
+    """The `version:` in this skill's frontmatter, or None if unreadable.
+
+    This is the ruleset a map was authored against, NOT the JSON shape — that
+    is `version` in the atlas itself and it changes far less often. The two are
+    deliberately separate: this PR-era change redefined what `cron` means
+    without touching a single field name, and a shape version would have said
+    nothing about it.
+    """
+    try:
+        head = SKILL_MD.read_text(errors="replace").split("---", 2)[1]
+    except (OSError, IndexError):
+        return None
+    m = re.search(r"^version:\s*(\d+)\s*$", head, re.M)
+    return int(m.group(1)) if m else None
 
 PLACEHOLDER = "/*__SCAN_DATA__*/"
 CONFIG_PLACEHOLDER = "/*__SCAN_CONFIG__*/"
@@ -142,6 +160,32 @@ def validate(data):
 
     if data.get("version") not in (1, 2):
         warnings.append(f"version is {data.get('version')!r}, expected 1 or 2")
+
+    # A map can be perfectly valid and still have been written against rules
+    # that have since changed — kinds get redefined, merge rules get added, and
+    # none of that moves a field name, so nothing else here would notice. The
+    # danger is the incremental path: it re-reads an existing map and diffs the
+    # repo rather than re-deriving the kinds, so a stale ruleset propagates
+    # silently with every check green.
+    proj_for_rules = data.get("project") if isinstance(data.get("project"), dict) else {}
+    cur = current_ruleset()
+    seen_rules = proj_for_rules.get("rules")
+    if cur is not None:
+        if seen_rules is None:
+            warnings.append(
+                f"project.rules is missing — this map predates ruleset {cur}. "
+                "Do NOT take the incremental path: re-derive the kinds with a "
+                "clean scan, then set project.rules. See CHANGELOG.md"
+            )
+        elif isinstance(seen_rules, int) and seen_rules < cur:
+            warnings.append(
+                f"project.rules is {seen_rules}, this skill is ruleset {cur} — the "
+                "map was authored against older rules and the incremental path "
+                f"would carry them forward. Read CHANGELOG.md for what changed "
+                f"between {seen_rules} and {cur}, then re-scan what it affects"
+            )
+        elif not isinstance(seen_rules, int):
+            warnings.append(f"project.rules is {seen_rules!r}, expected an integer")
 
     proj = data.get("project")
     if not isinstance(proj, dict) or not proj.get("name"):
