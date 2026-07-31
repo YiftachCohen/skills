@@ -70,6 +70,12 @@
       accent: "#B4552D", mmViewport: "#B4552D",
       mmEdge: "rgba(23,21,26,.20)", mmScrim: "rgba(246,242,234,.64)",
     },
+    terrain: {
+      entry: "#2C6E4B", cron: "#9A7318", agent: "#2A5A93", model: "#6A4287",
+      tool: "#146F72", service: "#454C8E", store: "#A4432A", external: "#77705F",
+      accent: "#8A4B2A", mmViewport: "#8A4B2A",
+      mmEdge: "rgba(69,55,34,.24)", mmScrim: "rgba(236,227,207,.62)",
+    },
   };
   const wantTheme = PREFS.theme || CONFIG.theme;
   let curTheme = THEME_PALETTES[wantTheme] ? wantTheme : "living";

@@ -3,8 +3,10 @@
 by looking at the map instead of inferring it from the JSON.
 
 Captures the view a first-time reader actually gets — the fitted overview — and
-optionally the worst case, every container expanded at once. Both themes, since
-"legible" differs between the near-black living theme and the print theme.
+optionally the worst case, every container expanded at once. Captures the two
+contrast extremes — the near-black living theme and the light print theme —
+since "legible" differs between them; terrain is a light theme like print, so
+one light capture stands in for both.
 
 Usage:
   python3 screenshot.py <atlas.json | atlas.html> [--out-dir DIR]

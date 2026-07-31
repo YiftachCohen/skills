@@ -5,7 +5,7 @@ a single self-contained HTML file.
 
 ```bash
 python3 scripts/render.py .atlas/atlas.json [--open] [--check] [-o out.html]
-                          [--theme living|print] [--online-icons]
+                          [--theme living|print|terrain] [--online-icons]
                           [--repo PATH] [--no-source-check]
                           [--edges] [--inventory [PATH]]
 ```
@@ -18,6 +18,7 @@ python3 scripts/render.py .atlas/atlas.json [--open] [--check] [-o out.html]
 | `--repo` | repo root the `sourceRef`s are relative to (inferred from the `<repo>/.atlas/atlas.json` layout; pass it explicitly when the atlas lives elsewhere) |
 | `--no-source-check` | skip the `sourceRef` file check |
 | `--theme print` | bright editorial theme for embeds and printing (default `living`: near-black, animated) |
+| `--theme terrain` | surveyed-chart theme: aged paper, earth-pigment ink, serif throughout; prints as itself rather than falling back to `print` |
 | `--online-icons` | preset the Icons toggle on (favicons are opt-in; letter tiles render otherwise, so the file makes zero network requests by default) |
 
 ## Ruleset drift
