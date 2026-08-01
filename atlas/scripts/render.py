@@ -1094,7 +1094,13 @@ def check_inventory(inv_path, nodes):
         # Only bullets are inventory items; headings and prose are scaffolding.
         if not s.startswith(("- ", "* ")) or s.endswith(":"):
             continue
-        hits = [t for t in BACKTICKED_RE.findall(s) if t in ids]
+        # A disposition has to dispose. Any backticked token that happens to be
+        # a node id used to count, which meant an item that merely *names* its
+        # own subject in backticks — the natural way to write the list — read as
+        # reconciled without anything having been reconciled. SKILL.md states
+        # this contract directly: a line that doesn't name an id after a
+        # disposition keyword is not a disposition.
+        #
         # A disposition may name several ids ("children `a`, `b`, `c`"). Every
         # one has to exist: a line whose first id is live and whose rest are
         # stale used to pass as "mapped", so deleting a node during a merge left
@@ -1102,8 +1108,9 @@ def check_inventory(inv_path, nodes):
         # absent — it looks checked.
         named = [t for group in INVENTORY_REF_RE.findall(s)
                  for t in BACKTICKED_RE.findall(group)]
+        live = [t for t in named if t in ids]
         dead = sorted({t for t in named if t not in ids})
-        if hits:
+        if live:
             mapped += 1
             if dead:
                 warnings.append(
@@ -1123,7 +1130,8 @@ def check_inventory(inv_path, nodes):
             unreconciled += 1
             warnings.append(
                 f"{inv_path.name}:{i} names no node and is not marked omitted: "
-                f"{s[:70]!r}"
+                f"{s[:70]!r} — a disposition names the id after a keyword "
+                "(child `x`, detail on `y`) or says 'omitted: <reason>'"
             )
     total = mapped + omitted + unreconciled
     if not total:
