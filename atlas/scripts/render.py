@@ -76,8 +76,9 @@ LEN_LIMITS = {
     "sourceRef": 120,
 }
 EDGE_LABEL_LIMIT = 24
-# Labels never fade, so past roughly one per four edges the map opens as a
-# thicket of grey text at fit-zoom and is legible only once you zoom in.
+# Labels never fade, so past roughly one per four edges DRAWN IN THE OPENING
+# VIEW the map opens as a thicket of grey text at fit-zoom and is legible only
+# once you zoom in.
 LABEL_RATIO_CAP = 0.25
 # Below this share of internal nodes carrying a `detail`, the map renders fine
 # and reads thin — see the comprehension evidence in validate().
@@ -464,13 +465,32 @@ def validate(data):
                     "map and record it in the inventory as omitted"
                 )
 
-    labelled = sum(1 for e in edges if e.get("label"))
-    if edges and labelled / len(edges) > LABEL_RATIO_CAP:
+    # SKILL.md states the rule at the opening view, and that is the only place
+    # it means anything: collapsing containers merges every child edge into one
+    # drawn edge per top-level pair, so labels concentrate. A map that passes
+    # one-in-four raw routinely opens at more than half its visible edges
+    # labelled. Count what the reader actually meets.
+    drawn = {}
+    for e in edges:
+        f, t = e.get("from"), e.get("to")
+        if f not in id_set or t not in id_set:
+            continue
+        fa, ta = top_ancestor(f), top_ancestor(t)
+        if fa == ta:
+            continue  # internal to a container; invisible until expanded
+        key = (fa, ta)
+        drawn[key] = drawn.get(key, False) or bool(e.get("label"))
+    labelled = sum(1 for has_label in drawn.values() if has_label)
+    # A floor, like every other ratio check here: on a six-node map two
+    # load-bearing labels are not a thicket, and warning about them pushes the
+    # agent to delete true information to silence a meaningless statistic.
+    if len(drawn) >= 12 and labelled / len(drawn) > LABEL_RATIO_CAP:
         warnings.append(
-            f"{labelled} of {len(edges)} edges carry a label (1 per "
-            f"{len(edges) / labelled:.1f}) — past 1 per {1 / LABEL_RATIO_CAP:.0f} "
-            "the map opens as a thicket of text; let `kind` carry the ordinary "
-            "relationships and keep labels for the ones that would surprise a reader"
+            f"{labelled} of {len(drawn)} edges drawn in the opening view carry a "
+            f"label ({labelled / len(drawn):.0%}) — past "
+            f"{LABEL_RATIO_CAP:.0%} the map opens as a thicket of text; let `kind` "
+            "carry the ordinary relationships and keep labels for the ones that "
+            "would surprise a reader"
         )
 
     return errors, warnings, len(top_level), len(nodes), len(edges)

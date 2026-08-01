@@ -289,12 +289,18 @@ class TestValidate(unittest.TestCase):
         self.assertTrue(any("has no edge in the opening view" in w for w in warnings))
 
     def test_label_ratio_over_cap(self):
-        data = _atlas(
-            [{"id": "a", "kind": "service"}, {"id": "b", "kind": "service"}],
-            edges=[{"from": "a", "to": "b", "label": "only one edge, all labelled"}],
-        )
+        # The label ratio is measured over edges DRAWN IN THE OPENING VIEW (one
+        # per distinct top-level pair), with a 12-edge floor — see plan 005.
+        # 13 top-level nodes, 12 edges from a hub to each of the others, all
+        # distinct top-level pairs and all labelled: 12 drawn, 100% labelled.
+        nodes = [{"id": "hub", "kind": "service"}]
+        nodes += [{"id": f"n{i}", "kind": "service"} for i in range(12)]
+        edges = [{"from": "hub", "to": f"n{i}", "label": f"label {i}"} for i in range(12)]
+        data = _atlas(nodes, edges=edges)
         errors, warnings, *_ = render.validate(data)
-        self.assertTrue(any("edges carry a label" in w for w in warnings))
+        self.assertTrue(
+            any("edges drawn in the opening view carry a label" in w for w in warnings)
+        )
 
     def test_over_length_label_field(self):
         data = _atlas([{"id": "a", "kind": "service", "label": "x" * 29}])
