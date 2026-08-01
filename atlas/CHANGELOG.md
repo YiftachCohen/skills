@@ -28,6 +28,68 @@ don't invalidate an existing map.
 No ruleset bump: nothing here changes what a field means, so no existing map
 needs re-deriving.
 
+**Cost.** A 138-file Go repo cost 877k subagent tokens to map. Most of that was
+avoidable, and the fixes are process rather than contract:
+
+- **`scripts/survey.sh`** does the measuring and the whole coverage sweep in one
+  command — scale, largest files, manifests (nested ones too), env vars,
+  scheduled work, entry points, schemas, exit codes, AI layer — in ~2-4k tokens.
+  Run it once and paste from it, instead of having every agent re-derive the
+  same metrics. It reads the **working tree**, not the git index, so untracked
+  files count and deleted ones don't; it owns its own output path and creates
+  `.atlas/`; and it caps matched-line length, because `head -N` bounds lines
+  rather than bytes and one hit in a committed minified bundle produced an 89KB
+  survey. `tests/test_survey.py` pins all of it.
+- **The survey is now authoritative for the mechanical sweep, and
+  `coverage-checklist.md` no longer duplicates its commands** — two copies of a
+  grep drift, and the copy in a doc is the one that goes stale silently. The
+  checklist keeps what a script cannot do: flag-unlocked modes, the
+  machine-facing contract, dev-time AI, and how to read the largest-files list.
+  Extending coverage means editing the script, so the next scan of that language
+  inherits it. Env vars are detected across Node/Vite/Deno, Python, Go, Ruby,
+  PHP, Java/Kotlin, C# and Rust — `os.getenv` (lowercase, and the most common
+  idiom of all) was previously missed entirely — and the AI sweep now covers the
+  major providers, SDK call shapes, agent frameworks and MCP.
+- The measuring command was **undercounting test exclusions**: `_test.go` and
+  `test_x.py` slip past a directory-name filter, so Go and Python repos measured
+  about twice their real size and the largest-files list filled up with tests.
+  armis-cli measured 267 files; it has 138. Fixed in the survey and in SKILL.md.
+- **The fan-out discipline now applies at any repo size**, not only above 500
+  files. `slice-prompt.md` was reachable only via `large-repos.md`, so a
+  mid-size repo got six hand-rolled prose prompts, 651k tokens, under a fifth of
+  it used. Slices return contract JSON, inventory lines, `counts` carrying the
+  command behind each number, and an `uncertain` list. No reports.
+- **Counts are run in the main loop, never taken from a subagent's prose.** One
+  investigation reported "10 call sites" for a masker that has 26 across 8
+  files; a one-second `grep -c` settled it.
+- The refute pass should **batch 15–20 claims into one agent and return
+  refutations only**. It stays the highest-value spend in the skill: 11 wrong
+  sentences of ~37 in one run, 8 of 20 in the next, both with every check green.
+
+**Validated, not projected.** The changes above were measured by mapping a
+second repo (276 TS/React Native files, previously unmapped) end to end:
+
+| | armis-cli, old way | nura, new way |
+|---|---:|---:|
+| source files | 138 | 276 |
+| investigation | 651,079 | 339,096 |
+| refute | 226,430 | 138,326 |
+| **total subagent** | **877,509** | **477,422** |
+| per source file | 6,359 | 1,730 |
+
+−46% absolute on a repo twice the size; −73% per file. Quality held: clean under
+`--strict` on the first iteration after merge, `detail` on 67/67 nodes, and all
+13 counted claims correct because each arrived with the command that produced it.
+
+The saving is from scoped prompts causing less exploratory reading, not from
+shorter answers — "tell me about this package" has no stopping condition and one
+baseline agent spent 161k across 55 tool calls; the slices averaged 26.
+
+Two survey bugs surfaced only by running on an unfamiliar repo, neither caught
+by the suite: `cohere` matched the word "coherent" (and `replicate` matched
+"replicate the behaviour"), and the survey scanned its own `.atlas/survey.txt`
+so each run re-reported the previous one. Both fixed, both now pinned by tests.
+
 - The label budget is now measured at the opening view (edges re-routed to
   top-level ancestors and merged), matching what SKILL.md always said, and has a
   12-edge floor like every other ratio check.
