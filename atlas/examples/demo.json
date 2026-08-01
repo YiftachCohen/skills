@@ -283,6 +283,13 @@
         "from": "billing-webhook",
         "to": "billing-invoices",
         "kind": "calls"
+      },
+      {
+        "from": "support",
+        "to": "resend",
+        "kind": "calls",
+        "ghost": true,
+        "claimedBy": "README.md:24"
       }
     ]
   }

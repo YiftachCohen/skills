@@ -338,8 +338,18 @@
       if (from === to || !visIds.has(from) || !visIds.has(to)) continue;
       const key = from + "→" + to;
       const prev = merged.get(key);
-      if (!prev) merged.set(key, { from, to, kind: e.kind, label: e.label, count: 1 });
-      else {
+      // A real edge beats a ghost. Once a collapse folds a connection the code
+      // actually makes onto the same pair, a dashed shadow of a doc's claim adds
+      // nothing — and drawing both would read as two relationships.
+      if (!prev) {
+        merged.set(key, { from, to, kind: e.kind, label: e.label, count: 1,
+                          ghost: !!e.ghost, claimedBy: e.claimedBy });
+      } else if (e.ghost) {
+        if (prev.ghost && !prev.claimedBy) prev.claimedBy = e.claimedBy;
+      } else if (prev.ghost) {
+        merged.set(key, { from, to, kind: e.kind, label: e.label, count: 1,
+                          ghost: false, claimedBy: null });
+      } else {
         prev.count++;
         if (!prev.label && e.label) prev.label = e.label;
         if (!prev.kind && e.kind) prev.kind = e.kind;
@@ -695,6 +705,7 @@
       const dx = Math.max(50, Math.abs(x2 - x1) * .45) * (backward ? -1 : 1);
       const g = document.createElementNS(SVGNS, "g");
       g.classList.add("edge");
+      if (e.ghost) g.classList.add("ghost");
       const path = document.createElementNS(SVGNS, "path");
       path.setAttribute("class", "edge-path");
       path.setAttribute("d", `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`);
@@ -715,12 +726,17 @@
         g.appendChild(t);
         pendingLabels.push({ t, g });
       }
-      if (e.kind) {
+      // A ghost trades the kind caption for its provenance: the whole point of
+      // drawing one is saying WHO claims it and that the code does not.
+      const kindText = e.ghost
+        ? "doc-claimed" + (e.claimedBy ? " · " + e.claimedBy : "")
+        : e.kind;
+      if (kindText) {
         const t = document.createElementNS(SVGNS, "text");
         t.setAttribute("class", "edge-kind");
         t.setAttribute("x", mx); t.setAttribute("y", my + 12);
         t.setAttribute("text-anchor", "middle");
-        t.textContent = e.kind;
+        t.textContent = kindText;
         g.appendChild(t);
       }
       svg.appendChild(g);
@@ -742,8 +758,14 @@
       });
     }
 
+    // Ghosts carry no real flow, so they stay out of adjacency: flow tracing,
+    // the guided tour and blast radius all run on what the code actually does.
     adjacency = new Map(curNodes.map(n => [n.id, { out: [], in: [] }]));
-    edgeEls.forEach(({ e }, i) => { adjacency.get(e.from).out.push(i); adjacency.get(e.to).in.push(i); });
+    edgeEls.forEach(({ e }, i) => {
+      if (e.ghost) return;
+      adjacency.get(e.from).out.push(i);
+      adjacency.get(e.to).in.push(i);
+    });
 
     // motion re-binds to the freshly-built edge paths (no stale DOM refs)
     onLayoutChanged();
@@ -796,8 +818,12 @@
       sub.textContent = n.sub;
       el.appendChild(sub);
     }
-    el.addEventListener("pointerenter", () => { if (!selectedId) highlight(n.id); });
-    el.addEventListener("pointerleave", () => { if (!selectedId) highlight(null); });
+    // Hover-tracing is suppressed while a blast is on screen: the two say
+    // different things with the same cards, and a stray pointer crossing the map
+    // should not narrate over the answer the reader asked for.
+    el.addEventListener("pointerenter", () => { if (!selectedId && !blastId) highlight(n.id); });
+    el.addEventListener("pointerleave", () => { if (!selectedId && !blastId) highlight(null); });
+    el.addEventListener("contextmenu", ev => { ev.preventDefault(); startBlast(n.id); });
     el.addEventListener("click", ev => {
       ev.stopPropagation();
       if (selectedId === n.id) { clearSelection(); return; }
@@ -857,14 +883,79 @@
   }
   function setKindFilter(kind) {
     stopTour();
+    exitBlast();
     kindFilter = kindFilter === kind ? null : kind;
     applyVisualState();
   }
+
+  // ---------- blast radius: kill a node, watch the lights go out ----------
+  // Pure traversal over the edges the map already has — nothing new to author,
+  // and it works on every atlas written before it existed. "up" walks edges
+  // backwards to everything that transitively depends on the dead node; "down"
+  // flips it to change impact. The point beyond the feature: an edge
+  // misattributed by one hop now darkens the visibly wrong half of the map, so
+  // edge correctness stops being something only `--edges` can see.
+  let blastId = null, blastDir = "up";
+  const blastBar = document.getElementById("blastbar");
+
+  function blastSets(rootVid, dir) {
+    const hit = new Set();
+    const stack = [rootVid];
+    while (stack.length) {
+      const cur = stack.pop();
+      for (const ei of adjacency.get(cur)?.[dir === "up" ? "in" : "out"] || []) {
+        const next = dir === "up" ? edgeEls[ei].e.from : edgeEls[ei].e.to;
+        if (next !== rootVid && !hit.has(next)) { hit.add(next); stack.push(next); }
+      }
+    }
+    // A dark node stops ALL of its flows, so in "up" mode every edge touching
+    // one darkens with it. In "down" mode only the propagation paths do: an
+    // edge from a healthy caller into a suspect callee still fires.
+    const edgeSet = new Set();
+    edgeEls.forEach(({ e }, i) => {
+      if (e.ghost) return;
+      const dark = dir === "up"
+        ? hit.has(e.from) || hit.has(e.to) || e.from === rootVid || e.to === rootVid
+        : hit.has(e.from) || e.from === rootVid;
+      if (dark) edgeSet.add(i);
+    });
+    return { hit, edgeSet };
+  }
+
+  // What applyVisualState writes from — null when blast is off, or when its
+  // root is no longer on screen (collapsing an ancestor can swallow it).
+  // Deliberately side-effect free: applyVisualState is the single writer, and
+  // exiting blast from inside it would re-enter it.
+  function blastState() {
+    if (!blastId) return null;
+    const vid = effectiveId(blastId);
+    if (!nodeCache.has(vid) || !adjacency.has(vid)) return null;
+    return { vid, ...blastSets(vid, blastDir) };
+  }
+
+  function startBlast(id) {
+    stopTour();
+    clearSelection();              // clears blast-independent state first
+    kindFilter = null;
+    blastId = id; blastDir = "up";
+    applyVisualState();
+  }
+  function exitBlast() {
+    if (!blastId) return;
+    blastId = null;
+    applyVisualState();
+  }
+  document.getElementById("blast-flip").addEventListener("click", () => {
+    blastDir = blastDir === "up" ? "down" : "up";
+    applyVisualState();
+  });
+  document.getElementById("blast-exit").addEventListener("click", exitBlast);
 
   // jump the camera to a node (chip click); resolves hidden children to
   // their collapsed container, and leaves focus mode if it hides the target
   function jumpToNode(id) {
     stopTour();
+    exitBlast();
     let vid = effectiveId(id);
     if (!nodeCache.has(vid)) { exitFocus(); vid = effectiveId(id); }
     const p = curPos.get(vid), el = nodeCache.get(vid);
@@ -894,6 +985,15 @@
       return;
     }
     const { nodeSet, edgeSet } = traceFrom(id);
+    // Ghosts are outside the trace proper — they aren't real flow — but the
+    // ones touching the hovered node light up, so "the README claims this calls
+    // X" is discoverable exactly where a reader would look for it.
+    edgeEls.forEach(({ e }, i) => {
+      if (e.ghost && (e.from === id || e.to === id)) {
+        edgeSet.add(i);
+        nodeSet.add(e.from === id ? e.to : e.from);
+      }
+    });
     traceId = id; traceNodeSet = nodeSet; traceEdgeSet = edgeSet;
     applyVisualState();
   }
@@ -907,6 +1007,10 @@
     const q = (search.value || "").trim().toLowerCase();
     const kindKeep = kindFilter ? computeKindKeep() : null;
     const searchHits = q ? computeSearchHits(q) : null;
+    // Blast is the fourth input and it writes its own two classes, but it is
+    // written HERE for the same reason the other three are: one pass, one
+    // writer, so nothing silently undoes anything else.
+    const blast = blastState();
     nodeCache.forEach((el, id) => {
       const inKind = !kindKeep || kindKeep.has(id);
       const inSearch = !searchHits || searchHits.has(id);
@@ -914,6 +1018,8 @@
       el.classList.toggle("match", !!(searchHits && searchHits.has(id)));
       el.classList.toggle("hl", !!(traceNodeSet && traceNodeSet.has(id) && id !== traceId));
       el.classList.toggle("dim", !inKind || !inSearch || !inTrace);
+      el.classList.toggle("blast-dead", !!blast && id === blast.vid);
+      el.classList.toggle("blast-hit", !!blast && blast.hit.has(id));
     });
     // keep an edge lit if it touches a kept node — shows what the kind connects to
     edgeEls.forEach(({ e, g }, i) => {
@@ -921,7 +1027,27 @@
       const inTraceEdge = !traceEdgeSet || traceEdgeSet.has(i);
       g.classList.toggle("hl", !!(traceEdgeSet && traceEdgeSet.has(i)));
       g.classList.toggle("dim", !inKindEdge || !inTraceEdge);
+      g.classList.toggle("blast-hit", !!blast && blast.edgeSet.has(i));
     });
+    blastBar.hidden = !blast;
+    if (blast) {
+      const name = byId.get(blast.vid)?.label || blast.vid;
+      const n = blast.hit.size;
+      // Assembled as nodes, not innerHTML: `name` is LLM-authored text from a
+      // codebase this viewer never vetted, and it is the one string here that
+      // could carry markup.
+      const msg = document.getElementById("blast-msg");
+      msg.textContent = "";
+      const strong = t => { const b = document.createElement("b"); b.textContent = t; return b; };
+      const parts = blastDir === "up"
+        ? ["If ", strong(name), " dies, ", strong(String(n)),
+           ` component${n === 1 ? "" : "s"} go${n === 1 ? "es" : ""} dark`]
+        : ["A change to ", strong(name), " can reach ", strong(String(n)),
+           ` component${n === 1 ? "" : "s"}`];
+      for (const p of parts) msg.append(p);
+      document.getElementById("blast-flip").textContent = blastDir === "up"
+        ? "Flip: what can it hurt?" : "Flip: what depends on it?";
+    }
   }
 
   // ---------- detail popover ----------
@@ -955,6 +1081,7 @@
       tg.onclick = () => toggle(id);
     } else tg.style.display = "none";
     document.getElementById("d-focus").onclick = () => setFocus(id);
+    document.getElementById("d-blast").onclick = () => startBlast(id);
     document.getElementById("d-discuss").onclick = () => openSheet(id);
     const r = el.getBoundingClientRect();
     detail.style.display = "block";
@@ -978,6 +1105,7 @@
       if (!shortcutsEl.hidden) setShortcuts(false);
       else if (!sheet.hidden) closeSheet();
       else if (tourActive) stopTour();
+      else if (blastId) exitBlast();
       else if (selectedId) clearSelection();
       else if (kindFilter) { kindFilter = null; applyVisualState(); }
       else if (focusRootId) exitFocus();
@@ -1027,13 +1155,20 @@
   // A neighbour without its path just sends the agent grepping, so name and
   // locate every endpoint the reader has not already been given.
   const pPeer = id => `${pName(id)} (${pKind(id)})` + (pRef(id) ? ` [${pRef(id)}]` : "");
+  // A ghost handed to an agent as a real connection sends it hunting for code
+  // that does not exist, and it will find something plausible — so the prompt
+  // says exactly what a ghost is rather than letting the arrow speak.
+  const ghostNote = e => e.ghost
+    ? `   [doc-claimed only${e.claimedBy ? ` by ${safeField(e.claimedBy)}` : ""}` +
+      " — NOT implemented in code]"
+    : "";
   function pEdge(e, selfId) {
     const arrow = `--${safeField(e.kind) || "connects"}-->`;
     const s = selfId
       ? (e.from === selfId ? `this ${arrow} ${pPeer(e.to)}`
                            : `${pPeer(e.from)} ${arrow} this`)
       : `${pName(e.from)} ${arrow} ${pName(e.to)}`;
-    return s + (e.label ? `   "${safeField(e.label)}"` : "");
+    return s + (e.label ? `   "${safeField(e.label)}"` : "") + ghostNote(e);
   }
 
   // The preamble and delimiter around the graph text, so an agent reading the
@@ -1101,7 +1236,7 @@
       const s = dir === "out"
         ? `${side(e, e.from)} ${arrow} ${pPeer(e.to)}`
         : `${pPeer(e.from)} ${arrow} ${side(e, e.to)}`;
-      return s + (e.label ? `   "${safeField(e.label)}"` : "");
+      return s + (e.label ? `   "${safeField(e.label)}"` : "") + ghostNote(e);
     };
 
     L.push("", "CONNECTIONS");
@@ -1477,7 +1612,8 @@
     particlesG.setAttribute("id", "particles");
     svg.appendChild(particlesG);
     if (!edgeEls.length || edgeEls.length > 150) return;   // skip entirely above 150 edges
-    const idxs = edgeEls.map((_, i) => i).sort((a, b) => {
+    // No particles on a ghost: nothing flows through a claim the code never made.
+    const idxs = edgeEls.map((_, i) => i).filter(i => !edgeEls[i].e.ghost).sort((a, b) => {
       const ha = edgeEls[a].g.classList.contains("hl") ? 0 : 1;
       const hb = edgeEls[b].g.classList.contains("hl") ? 0 : 1;
       return ha - hb || a - b;                              // traced/focused first, then by index
@@ -1522,7 +1658,10 @@
       p.circle.setAttribute("cx", pt.x);
       p.circle.setAttribute("cy", pt.y);
       const cls = eg.g.classList;
-      p.circle.style.opacity = cls.contains("dim") ? 0 : cls.contains("hl") ? 0.95 : 0.30;
+      // A darkened edge carries no traffic — dots still running along it would
+      // say the opposite of what the blast is showing.
+      p.circle.style.opacity = cls.contains("dim") || cls.contains("blast-hit") ? 0
+        : cls.contains("hl") ? 0.95 : 0.30;
     }
     particleRAF = requestAnimationFrame(stepParticles);
   }
@@ -1653,6 +1792,7 @@
   function startTour() {
     const seq = tourSequence();
     if (!seq.length) return;
+    exitBlast();
     if (kindFilter) { kindFilter = null; applyVisualState(); }
     tourActive = true;
     playBtn.classList.add("active");

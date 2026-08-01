@@ -26,6 +26,7 @@
     --external: #8797B3;
     --edge: #23324F;            /* idle edge */
     --edge-hl: var(--accent);   /* traced edge glows cyan */
+    --danger: #FF5470;          /* blast radius: the dead node and its fallout */
     --grid-1: rgba(77,227,255,.040);
     --grid-2: rgba(77,227,255,.018);
     --frame-1: rgba(77,227,255,.14);
@@ -61,6 +62,7 @@
     --external: #6E7686;
     --edge: #A79F90;
     --edge-hl: var(--accent);
+    --danger: #B3261E;
     --grid-1: rgba(23,21,26,.035);
     --grid-2: rgba(23,21,26,.016);
     --frame-1: rgba(23,21,26,.14);
@@ -98,6 +100,7 @@
     --external: #77705F;
     --edge: #8A7355;            /* road brown */
     --edge-hl: var(--accent);
+    --danger: #9B2C1A;          /* iron-oxide red, the pigment a survey corrects in */
     /* the grid reads as a chart graticule rather than graph paper */
     --grid-1: rgba(69,55,34,.055);
     --grid-2: rgba(69,55,34,.022);
@@ -146,7 +149,7 @@
       --text: #17151A; --muted: #5C5750; --faint: #8B857B; --accent: #B4552D;
       --entry: #1E8A5B; --cron: #A87A16; --agent: #2456C4; --model: #7C3AC0;
       --tool: #0F8A9C; --service: #4C51B8; --store: #C2492F; --external: #6E7686;
-      --edge: #A79F90; --edge-hl: var(--accent);
+      --edge: #A79F90; --edge-hl: var(--accent); --danger: #B3261E;
       --grid-1: rgba(23,21,26,.035); --grid-2: rgba(23,21,26,.016);
       --frame-1: rgba(23,21,26,.14); --frame-2: rgba(23,21,26,.05);
       --panel-glass: #FFFFFF; --ambient: none;
@@ -415,6 +418,44 @@
   g.edge.hl .edge-kind { opacity: 1; fill: var(--edge-hl); }
   g.edge.dim, .node.dim, .group-box.dim { opacity: .14; }
 
+  /* ---------- ghost edges: what the docs believe, drawn as what it is ----------
+     Dashed and faint so it never reads as a connection the code makes, and it
+     keeps the dashes when traced — a highlighted ghost is still a claim. */
+  g.edge.ghost .edge-path { stroke-dasharray: 5 5; opacity: .55; }
+  g.edge.ghost .edge-arrow { opacity: .55; }
+  g.edge.ghost .edge-kind { font-style: italic; }
+  g.edge.ghost.hl .edge-path { stroke-dasharray: 5 5; filter: none; }
+
+  /* ---------- blast radius: the dead node and everything that goes dark ---------- */
+  .node.blast-dead {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 1.5px var(--danger), 0 0 26px -4px var(--danger);
+  }
+  .node.blast-hit { opacity: .26; filter: grayscale(.75) brightness(.8); }
+  g.edge.blast-hit .edge-path { stroke: var(--danger); opacity: .32; filter: none; }
+  g.edge.blast-hit .edge-arrow { fill: var(--danger); opacity: .32; }
+  g.edge.blast-hit .edge-label, g.edge.blast-hit .edge-kind { opacity: .25; }
+  #blastbar {
+    position: fixed; z-index: 21; top: 84px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    background: var(--panel-glass); border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+    border-radius: 8px; padding: 7px 8px 7px 14px; box-shadow: var(--shadow);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  }
+  :root[data-theme="terrain"] #blastbar { border-radius: 0; }
+  #blastbar[hidden] { display: none; }
+  #blastbar #blast-msg { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+  #blastbar #blast-msg b { color: var(--text); font-weight: 600; }
+  #blastbar button {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 5px;
+    color: var(--text); padding: 4px 10px; font-size: 12px; cursor: pointer;
+    font-family: var(--font-display); white-space: nowrap;
+  }
+  :root[data-theme="terrain"] #blastbar button { border-radius: 0; }
+  #blastbar button:hover { border-color: var(--danger); color: var(--danger); }
+  #blastbar #blast-exit { padding: 4px 8px; color: var(--faint); border-color: transparent; background: none; }
+  #blastbar #blast-exit:hover { color: var(--text); }
+
   /* ---------- flow particles ---------- */
   #particles { pointer-events: none; }
   .particle { opacity: 0; transition: opacity .3s; }
@@ -570,5 +611,5 @@
      print block would lose the cascade. The title block is the drafting
      caption for the printed sheet and stays. */
   @media print {
-    .toolbar, #shortcuts, #detail, #promptsheet { display: none !important; }
+    .toolbar, #shortcuts, #detail, #promptsheet, #blastbar { display: none !important; }
   }

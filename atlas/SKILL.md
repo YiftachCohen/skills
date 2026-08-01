@@ -124,7 +124,9 @@ are fixed, and the CLI prints everything you need.
     "edges": [
       { "from": "chat", "to": "agent", "kind": "triggers" },
       { "from": "agent", "to": "gpt4o", "kind": "calls" },
-      { "from": "billing", "to": "pg", "kind": "writes", "label": "charges on trial end" }
+      { "from": "billing", "to": "pg", "kind": "writes", "label": "charges on trial end" },
+      { "from": "agent", "to": "pg", "kind": "writes",
+        "ghost": true, "claimedBy": "README.md:31" }
     ]
   }
 }
@@ -144,6 +146,7 @@ against, and `--check` prints the number to use.
 | edge `kind` | optional, prefer setting it: `calls`/`reads`/`writes`/`triggers`/`enqueues`, revealed on flow trace. Two nodes can have more than one edge — a service that both reads and writes a store gets both, not a compromise label. Use `enqueues` for a hand-off that returns before the work happens (a task queue, a job runner, a pub/sub publish): it is where the flow stops being synchronous, which is the first thing a reader needs when the far end never ran. |
 | edge `label` | optional, <=24, always visible — spend it on the few relationships that would surprise a reader ("charges on trial end"). See the label budget below. |
 | edge `evidence` | optional `path:line` — the call site you read that proves this edge. Records a verification the text heuristic can't repeat (DI, barrel re-exports, generated registries), so `--edges` stops re-flagging it. Use it for the few edges that need it, not as a default: attesting everything switches the check off, and `--edges` warns past 80% attested, once there are 20 or more edges. |
+| edge `ghost` + `claimedBy` | `ghost: true` marks a **doc-claimed edge the code does not implement**; `claimedBy` (required with it) is a `path:line` ref to the doc making the claim, and is verified against the repo. Renders dashed and translucent, captioned "doc-claimed · <ref>"; excluded from flow tracing, blast radius, particles and `--edges`, and annotated in the "Ask agent…" prompt. Never both `ghost` and `evidence` — finding the performing line makes it a real edge. See Ghost edges below. |
 | `domain` | optional favicon domain, no scheme (openai.com) — only for things a recognizable company owns; use the product domain for models (claude.ai). |
 | `detail` | <=200: one sentence shown on click. **Treat it as required for internal nodes, like `sourceRef`** — it is what a reader who has never seen the repo actually reads. In a controlled pair of maps of one repo, the one with `detail` on 92% of nodes answered 16/16 comprehension questions and the one with 19% answered 10/16, and every missed answer was a missing sentence rather than a missing box. `--check` warns below 80%. |
 | `sourceRef` | repo path plus `:line` (<=120). Treat it as **required for internal nodes** — it feeds jump-to-code and the viewer's "Ask agent…" prompt, and a node without one produces a vague prompt. Rules below. |
@@ -352,9 +355,11 @@ one hop, and every one looked correct from the import block. Four shapes:
   `features/subscription/...`).
 - **Arrows out of a diagram.** A funnel described in a docstring, README or
   CLAUDE.md that no module implements. When docs and code disagree, map the code
-  and say so in your summary. This holds inside a sentence too: if a doc is your
-  only source for a mechanism ("streams uploads through io.Pipe"), grep for it
-  before repeating it in a `detail` — a stale detail inherits the doc's
+  — and keep the doc's claim as a `ghost` edge (below) rather than discarding
+  it: the delta between the system's self-image and its reality is often the
+  most valuable thing on the map. This holds inside a sentence too: if a doc is
+  your only source for a mechanism ("streams uploads through io.Pipe"), grep for
+  it before repeating it in a `detail` — a stale detail inherits the doc's
   authority and outlives the doc.
 - **Hub nodes.** Shared infrastructure (a db connection module, a logger, a
   config loader) touches everything; drawing every true edge buries the story
@@ -376,6 +381,42 @@ one hop, and every one looked correct from the import block. Four shapes:
 Point every edge at the most specific node that's true — the viewer re-routes
 and merges edges automatically when a container is collapsed. Draw from a
 container only when every child does the same thing.
+
+Blast radius runs on these edges: right-click a node and the viewer walks them
+backwards to darken everything that transitively depends on it. There is nothing
+to author — but it is one more reason the `--edges` pass and the hand-verifying
+above are not optional, because it gives every edge a consequence a reader can
+*watch*. An edge misattributed by one hop now darkens the visibly wrong half of
+the map, which is how a wrong edge stops being a wrong line nobody squints at.
+
+## Ghost edges — what the docs believe vs. what the code does
+
+You already find these: every "arrows out of a diagram" case above is a claim
+some doc makes that no module implements. Instead of dropping it, keep it as a
+ghost — the map then shows the delta between the system's self-image and its
+reality, which is frequently the first thing a new engineer has to unlearn:
+
+```json
+{ "from": "agent", "to": "pg", "kind": "writes",
+  "ghost": true, "claimedBy": "README.md:31" }
+```
+
+Rules that keep ghosts honest:
+
+- `claimedBy` is **required** — a `path:line` ref to the doc making the claim,
+  resolved inside the repo like every other path in the contract. A ghost
+  without provenance is a dashed rumor a reader has no way to check.
+- A ghost is **by definition unimplemented**. If you find the line that performs
+  it, it is a real edge with `evidence`, not a ghost. Never both; `--check`
+  flags the contradiction.
+- Ghosts are for claims a reader would otherwise believe — a README data-flow
+  section, an architecture doc, a CLAUDE.md. Don't ghost every stale comment: a
+  handful of load-bearing lies beats a fog of dashes.
+- A ghost does not count as connectivity. A top-level node whose only edge is a
+  ghost is still reported as floating, because in the code it is.
+- **Mention notable ones in your summary.** A ghost is a finding, not a
+  decoration — "the README says the agent writes to Postgres; nothing does" is
+  the kind of sentence a map exists to produce.
 
 ## Details — the claims nothing checks
 

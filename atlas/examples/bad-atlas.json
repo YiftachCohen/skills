@@ -30,6 +30,13 @@
         "to": "svc",
         "kind": "calls",
         "label": "this edge label is far too long past twenty four"
+      },
+      {
+        "from": "svc",
+        "to": "entry",
+        "kind": "calls",
+        "ghost": true,
+        "evidence": "src/svc.ts:12"
       }
     ]
   }

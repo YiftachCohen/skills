@@ -27,7 +27,7 @@ shared source of truth is the `SKILL.md` file inside each skill directory.
 
 | Skill | Description |
 |---|---|
-| [atlas](./atlas) | Map a codebase into a local-only interactive architecture atlas with drill-down, flow tracing, and no upload. |
+| [atlas](./atlas) | Map a codebase into a local-only interactive architecture atlas with drill-down, flow tracing, blast radius, and no upload. |
 | [babysit-pr](./babysit-pr) | Drive a GitHub pull request through failing CI, bot comments, review feedback, and final green status. |
 | [client-feedback](./client-feedback) | Translate, verify, classify, and respond to client or end-user feedback before implementing changes. |
 | [loom-watch](./loom-watch) | Convert Loom recordings into metadata, captions, sampled frames, and a timestamped review manifest. |

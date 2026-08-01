@@ -421,6 +421,26 @@ def validate(data):
                 f"edges[{i}] evidence {ev!r} is not a `path:line` ref — it attests "
                 "that you read the performing call site, so it needs the line"
             )
+        # A ghost is a doc-claimed edge the code does not implement, so it is the
+        # one edge whose value is entirely in its provenance: without `claimedBy`
+        # it renders as an unexplained dashed arrow a reader cannot check, and
+        # `evidence` on one is a self-contradiction — the same discipline as
+        # `evidence`, pointed at a negative claim.
+        if e.get("ghost"):
+            cb = e.get("claimedBy")
+            if not isinstance(cb, str) or not cb:
+                warnings.append(
+                    f"edges[{i}] ({e.get('from')} -> {e.get('to')}) is a ghost with no "
+                    "`claimedBy` — a ghost is a doc's claim, so cite the doc that "
+                    "makes it (`README.md:31`). A ghost without provenance is a "
+                    "dashed rumor"
+                )
+            if ev:
+                warnings.append(
+                    f"edges[{i}] ({e.get('from')} -> {e.get('to')}) is a ghost yet "
+                    "carries `evidence` — if you found the line that performs it, it "
+                    "is a real edge, not a ghost; drop one of the two"
+                )
 
     for key, cap in CAPS.items():
         items = graph.get(key)
@@ -459,6 +479,11 @@ def validate(data):
     if edges:
         visible = set()
         for e in edges:
+            # A ghost does draw an arrow, but it is a claim the code does not
+            # make: a node held onto the map by nothing but a doc-claimed edge
+            # is exactly the orphan this check exists to surface.
+            if e.get("ghost"):
+                continue
             f, t = e.get("from"), e.get("to")
             if f in id_set and t in id_set:
                 fa, ta = top_ancestor(f), top_ancestor(t)
@@ -934,6 +959,10 @@ def check_edges(nodes, edges, repo_root):
         src, dst = by_id.get(e.get("from")), by_id.get(e.get("to"))
         if not src or not dst:
             continue
+        # A ghost declares itself unimplemented, so hunting for its performing
+        # line would flag every one — and each flag would be the point missed.
+        if e.get("ghost"):
+            continue
         # An external service's behaviour is not in this repo: a scheduler that
         # triggers a route is configured in its own dashboard or a vercel.json,
         # not in a file we could point at.
@@ -1266,6 +1295,20 @@ def main():
         ref_warnings, checked, ok, weak = check_source_refs(
             (data.get("graph") or {}).get("nodes") or [], repo_root)
         warnings.extend(ref_warnings)
+        # A ghost's `claimedBy` is its provenance, and a citation of a doc that
+        # does not exist is a ghost of a ghost. Path only: docs get renamed and
+        # the claim usually survives the move, so the line is not insisted on.
+        for i, e in enumerate((data.get("graph") or {}).get("edges") or []):
+            if not isinstance(e, dict) or not e.get("ghost"):
+                continue
+            cb = e.get("claimedBy")
+            if isinstance(cb, str) and cb:
+                doc = resolve_in_repo(repo_root, cb.partition(":")[0])
+                if doc is None or not doc.exists():
+                    warnings.append(
+                        f"edges[{i}] claimedBy {cb!r} does not exist in {repo_root} "
+                        "— cite the doc that actually makes the claim"
+                    )
         if checked:
             source_note = f", {ok}/{checked} sourceRefs resolve (path and line)"
             if weak:
@@ -1322,8 +1365,12 @@ def main():
         # worklist — but only when --edges hasn't already produced a sharper one,
         # since a list of every labelled edge next to a list of the suspect ones
         # just dilutes the suspect ones.
+        # A ghost is unimplemented by definition, so it has no call site to
+        # verify — listing one here would send the reader hunting for code that
+        # the map already says does not exist.
         labelled = ([] if args.edges else
-                    [e for e in (data.get("graph") or {}).get("edges") or [] if e.get("label")])
+                    [e for e in (data.get("graph") or {}).get("edges") or []
+                     if e.get("label") and not e.get("ghost")])
         if labelled:
             print("labelled edges to verify at a call site:", file=sys.stderr)
             for e in labelled:
@@ -1345,9 +1392,15 @@ def main():
         rules_note = f", ruleset {ruleset}" if ruleset is not None else ""
         warn_note = (f" — {len(warnings)} warning(s); not clean until 0"
                      if warnings else "")
+        # Ghosts are counted separately from the edge total they are part of:
+        # they are findings, not decoration, and a map that has them should say
+        # so where the reader is already reading the shape of the map.
+        ghosts = sum(1 for e in (data.get("graph") or {}).get("edges") or []
+                     if isinstance(e, dict) and e.get("ghost"))
+        ghost_note = f" ({ghosts} doc-claimed)" if ghosts else ""
         print(f"{atlas_path} is valid "
               f"({top_level_count} top-level of {node_count} nodes, "
-              f"{edge_count} edges{source_note}{rules_note}){warn_note}")
+              f"{edge_count} edges{ghost_note}{source_note}{rules_note}){warn_note}")
         # Warnings are the whole quality bar for a map — SKILL.md tells the
         # agent to re-run until it is clean, and without this a check that
         # always exits 0 cannot gate anything on that.
