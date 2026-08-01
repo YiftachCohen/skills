@@ -3,6 +3,9 @@
 .private-skills/
 tmp/
 
+# Advisor/audit handoff plans — local working notes, not published skills.
+plans/
+
 # atlas local output (never uploaded, regenerate anytime)
 .atlas/
 .gstack/
