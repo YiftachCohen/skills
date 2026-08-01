@@ -1,7 +1,7 @@
 # Comprehension protocol — is the map understood, not just correct?
 
-Content accuracy is already graded (`grade_atlas.py`, `--check`, edge
-verification). This protocol tests the thing those can't: whether someone who
+Content accuracy is already graded (`--check`, `--edges`, `--inventory`). This
+protocol tests the thing those can't: whether someone who
 has **never seen the repo** can answer real questions about the system using
 only the atlas. That is the property the user buys a map for, and on large
 monorepos it is where maps fail even when every edge is true.
