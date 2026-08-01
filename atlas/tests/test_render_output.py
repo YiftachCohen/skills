@@ -109,13 +109,13 @@ class TestNodeIdCharset(unittest.TestCase):
         }
 
     def test_colon_id_is_an_error(self):
-        errors, warnings, _ = render.validate(self._atlas("svc:billing"))
+        errors, warnings, *_ = render.validate(self._atlas("svc:billing"))
         self.assertTrue(any("svc:billing" in e for e in errors))
 
     def test_ordinary_ids_pass(self):
         for node_id in ("a", "billing-plans", "api.v2", "snake_case_id"):
             with self.subTest(node_id=node_id):
-                errors, warnings, _ = render.validate(self._atlas(node_id))
+                errors, warnings, *_ = render.validate(self._atlas(node_id))
                 self.assertFalse(
                     any("has an id outside" in e for e in errors),
                     f"ordinary id {node_id!r} incorrectly rejected: {errors}",
@@ -136,7 +136,7 @@ class TestExamplesStillValidate(unittest.TestCase):
         for name in ("demo.json", "demo-v1.json", "bad-atlas.json"):
             with self.subTest(name=name):
                 data = json.loads((_EXAMPLES / name).read_text())
-                errors, warnings, _ = render.validate(data)
+                errors, warnings, *_ = render.validate(data)
                 self.assertEqual(errors, [], f"{name}: {errors}")
 
 

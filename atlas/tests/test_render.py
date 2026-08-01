@@ -176,27 +176,27 @@ class TestValidate(unittest.TestCase):
 
     def test_duplicate_node_ids(self):
         data = _atlas([{"id": "a", "kind": "service"}, {"id": "a", "kind": "service"}])
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("duplicate node ids" in e for e in errors))
 
     def test_node_with_no_id(self):
         data = _atlas([{"kind": "service"}])
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("has no id" in e for e in errors))
 
     def test_missing_project_name(self):
         data = _atlas([{"id": "a", "kind": "service"}], project={"rules": 3})
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("project.name is required" in e for e in errors))
 
     def test_parent_not_a_node_id(self):
         data = _atlas([{"id": "a", "kind": "service", "parent": "missing"}])
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("is not a node id" in e for e in errors))
 
     def test_node_is_its_own_parent(self):
         data = _atlas([{"id": "a", "kind": "service", "parent": "a"}])
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("is its own parent" in e for e in errors))
 
     def test_depth_three_nesting(self):
@@ -205,7 +205,7 @@ class TestValidate(unittest.TestCase):
             {"id": "b", "kind": "service", "parent": "a"},
             {"id": "c", "kind": "service", "parent": "b"},
         ])
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("nested more than 2 levels deep" in e for e in errors))
 
     def test_edge_endpoint_not_a_node_id(self):
@@ -213,26 +213,26 @@ class TestValidate(unittest.TestCase):
             [{"id": "a", "kind": "service"}],
             edges=[{"from": "a", "to": "missing"}],
         )
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("is not a node id" in e for e in errors))
 
     def test_empty_graph_nodes(self):
         data = _atlas([])
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("graph.nodes is empty" in e for e in errors))
 
     # -- warnings --------------------------------------------------------
 
     def test_tool_node_with_no_model_or_agent(self):
         data = _atlas([{"id": "a", "kind": "tool"}])
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("no `model` or `agent`" in w for w in warnings))
 
     def test_top_level_service_share_over_half(self):
         nodes = [{"id": f"svc{i}", "kind": "service"} for i in range(7)]
         nodes += [{"id": f"tool{i}", "kind": "tool"} for i in range(5)]
         data = _atlas(nodes)
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("TOP-LEVEL nodes are `service`" in w for w in warnings))
 
     def test_all_nodes_service_share_over_60_percent(self):
@@ -247,17 +247,17 @@ class TestValidate(unittest.TestCase):
         ]
         nodes += [{"id": f"tool{i}", "kind": "tool"} for i in range(5)]
         data = _atlas(nodes)
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("of 31 nodes are `service`" in w for w in warnings))
 
     def test_over_length_sub_field(self):
         data = _atlas([{"id": "a", "kind": "service", "sub": "x" * 41}])
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("sub is 41 chars" in w for w in warnings))
 
     def test_over_length_group_field(self):
         data = _atlas([{"id": "a", "kind": "service", "group": "x" * 25}])
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("group is 25 chars" in w for w in warnings))
 
     def test_edge_points_at_own_container(self):
@@ -268,14 +268,14 @@ class TestValidate(unittest.TestCase):
             ],
             edges=[{"from": "child", "to": "parent"}],
         )
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("points at its own container" in w for w in warnings))
 
     def test_detail_coverage_below_80_percent(self):
         nodes = [{"id": f"n{i}", "kind": "service", "detail": "x"} for i in range(9)]
         nodes += [{"id": f"m{i}", "kind": "service"} for i in range(3)]
         data = _atlas(nodes)
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("carry a `detail`" in w for w in warnings))
 
     def test_floating_top_level_node(self):
@@ -285,7 +285,7 @@ class TestValidate(unittest.TestCase):
         )
         # a's self-edge keeps `edges` non-empty but neither node appears in
         # `visible` because fa == ta for a's own edge, and b has no edge at all.
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("has no edge in the opening view" in w for w in warnings))
 
     def test_label_ratio_over_cap(self):
@@ -293,12 +293,12 @@ class TestValidate(unittest.TestCase):
             [{"id": "a", "kind": "service"}, {"id": "b", "kind": "service"}],
             edges=[{"from": "a", "to": "b", "label": "only one edge, all labelled"}],
         )
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("edges carry a label" in w for w in warnings))
 
     def test_over_length_label_field(self):
         data = _atlas([{"id": "a", "kind": "service", "label": "x" * 29}])
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("label is 29 chars" in w for w in warnings))
 
     def test_over_length_edge_label(self):
@@ -306,12 +306,12 @@ class TestValidate(unittest.TestCase):
             [{"id": "a", "kind": "service"}, {"id": "b", "kind": "service"}],
             edges=[{"from": "a", "to": "b", "label": "x" * 25}],
         )
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("edges[0] label is 25 chars" in w for w in warnings))
 
     def test_project_rules_lower_than_current_ruleset(self):
         data = _atlas([{"id": "a", "kind": "service"}], project={"name": "T", "rules": 2})
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertTrue(any("this skill is ruleset 3" in w for w in warnings))
 
     # -- negative case --------------------------------------------------------
@@ -339,7 +339,7 @@ class TestValidate(unittest.TestCase):
         ]
         edges = [{"from": "a", "to": "b"}, {"from": "b", "to": "c"}]
         data = _atlas(nodes, edges=edges, project={"name": "T", "rules": 3})
-        errors, warnings, _ = render.validate(data)
+        errors, warnings, *_ = render.validate(data)
         self.assertEqual(errors, [])
 
 

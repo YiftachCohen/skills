@@ -165,21 +165,24 @@ def validate(data):
     # --check is the mode that exists to diagnose a malformed map, so it must
     # report the malformation rather than raise out of it. Everything below
     # indexes into dicts and iterates lists; normalise once, here, and return
-    # early when the shape is too broken for the rest to mean anything.
+    # early when the shape is too broken for the rest to mean anything. The
+    # tuple arity matches the normal return below (errors, warnings,
+    # top-level/node/edge counts) so main() can unpack it unconditionally —
+    # the counts are 0 here because nothing downstream of the guard ran.
     if not isinstance(data, dict):
-        return [f"top level is {type(data).__name__}, expected a JSON object"], [], 0
+        return [f"top level is {type(data).__name__}, expected a JSON object"], [], 0, 0, 0
 
     graph = data.get("graph")
     if graph is not None and not isinstance(graph, dict):
-        return [f"graph is {type(graph).__name__}, expected an object"], [], 0
+        return [f"graph is {type(graph).__name__}, expected an object"], [], 0, 0, 0
     graph = graph or {}
 
     raw_nodes = graph.get("nodes") or []
     raw_edges = graph.get("edges") or []
     if not isinstance(raw_nodes, list):
-        return [f"graph.nodes is {type(raw_nodes).__name__}, expected a list"], [], 0
+        return [f"graph.nodes is {type(raw_nodes).__name__}, expected a list"], [], 0, 0, 0
     if not isinstance(raw_edges, list):
-        return [f"graph.edges is {type(raw_edges).__name__}, expected a list"], [], 0
+        return [f"graph.edges is {type(raw_edges).__name__}, expected a list"], [], 0, 0, 0
 
     nodes = [n for n in raw_nodes if isinstance(n, dict)]
     edges = [e for e in raw_edges if isinstance(e, dict)]
@@ -465,7 +468,7 @@ def validate(data):
             "relationships and keep labels for the ones that would surprise a reader"
         )
 
-    return errors, warnings, len(top_level)
+    return errors, warnings, len(top_level), len(nodes), len(edges)
 
 
 def infer_repo_root(atlas_path):
@@ -1164,7 +1167,7 @@ def main():
     except json.JSONDecodeError as e:
         sys.exit(f"error: {atlas_path} is not valid JSON: {e}")
 
-    errors, warnings, top_level_count = validate(data)
+    errors, warnings, top_level_count, node_count, edge_count = validate(data)
 
     repo_root = Path(args.repo).resolve() if args.repo else infer_repo_root(atlas_path)
     source_note = ""
@@ -1250,8 +1253,8 @@ def main():
         warn_note = (f" — {len(warnings)} warning(s); not clean until 0"
                      if warnings else "")
         print(f"{atlas_path} is valid "
-              f"({top_level_count} top-level of {len(data['graph']['nodes'])} nodes, "
-              f"{len(data['graph'].get('edges', []))} edges{source_note}){warn_note}")
+              f"({top_level_count} top-level of {node_count} nodes, "
+              f"{edge_count} edges{source_note}){warn_note}")
         # Warnings are the whole quality bar for a map — SKILL.md tells the
         # agent to re-run until it is clean, and without this a check that
         # always exits 0 cannot gate anything on that.
