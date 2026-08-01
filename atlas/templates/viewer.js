@@ -705,8 +705,7 @@
     document.getElementById("tb-nodes").innerHTML =
       `<b>${curNodes.length}</b> shown / ${allNodes.length}`;
 
-    applySearch();
-    applyKindFilter();
+    applyVisualState();
     sizeMinimap();                 // the map's aspect drives the minimap's
     if (!keepView) fit(0.45); else apply();
   }
@@ -787,24 +786,17 @@
     return isContainer(id) && !expanded.has(id) &&
       (childrenOf.get(id) || []).some(c => kindKey(c) === kindFilter);
   }
-  function applyKindFilter() {
-    document.querySelectorAll("[data-kindfilter]").forEach(el =>
-      el.classList.toggle("active", el.dataset.kindfilter === kindFilter));
-    if (!kindFilter) {
-      nodeCache.forEach(el => el.classList.remove("dim"));
-      edgeEls.forEach(({ g }) => g.classList.remove("dim"));
-      return;
-    }
+  // Set-computing half of the old applyKindFilter: which nodes the current
+  // kindFilter keeps. The writing half now lives in applyVisualState.
+  function computeKindKeep() {
     const keep = new Set();
     nodeCache.forEach((el, id) => { if (kindFilterMatches(id)) keep.add(id); });
-    nodeCache.forEach((el, id) => el.classList.toggle("dim", !keep.has(id)));
-    // keep an edge lit if it touches a kept node — shows what the kind connects to
-    edgeEls.forEach(({ e, g }) => g.classList.toggle("dim", !keep.has(e.from) && !keep.has(e.to)));
+    return keep;
   }
   function setKindFilter(kind) {
     stopTour();
     kindFilter = kindFilter === kind ? null : kind;
-    applyKindFilter();
+    applyVisualState();
   }
 
   // jump the camera to a node (chip click); resolves hidden children to
@@ -825,22 +817,48 @@
     setTimeout(() => { if (selectedId === vid) showDetail(vid, el); }, 480);
   }
 
+  // Search, the kind filter and hover-tracing all used to write `dim`
+  // independently, so whichever ran last won: a pointerleave anywhere on the map
+  // silently cleared an active search while the query stayed in the box. These
+  // three module-scope trace variables are the set-computing half of the old
+  // highlight(id)/highlight(null); applyVisualState is the one place that
+  // writes hl/dim/match, from the intersection of all three inputs.
+  let traceId = null, traceNodeSet = null, traceEdgeSet = null;
   function highlight(id) {
     if (!id) {
-      nodeCache.forEach(el => el.classList.remove("hl", "dim"));
-      edgeEls.forEach(({ g }) => g.classList.remove("hl", "dim"));
+      traceId = null; traceNodeSet = null; traceEdgeSet = null;
       groupBoxEls.forEach(el => el.classList.remove("dim"));
-      applyKindFilter();
+      applyVisualState();
       return;
     }
     const { nodeSet, edgeSet } = traceFrom(id);
-    nodeCache.forEach((el, nid) => {
-      el.classList.toggle("hl", nodeSet.has(nid) && nid !== id);
-      el.classList.toggle("dim", !nodeSet.has(nid));
+    traceId = id; traceNodeSet = nodeSet; traceEdgeSet = edgeSet;
+    applyVisualState();
+  }
+
+  // One function, one pass, intersection of all three: the kind filter, the
+  // search query and hover-tracing all dim/highlight the same elements, so
+  // whichever wrote last used to silently undo the others.
+  function applyVisualState() {
+    document.querySelectorAll("[data-kindfilter]").forEach(el =>
+      el.classList.toggle("active", el.dataset.kindfilter === kindFilter));
+    const q = (search.value || "").trim().toLowerCase();
+    const kindKeep = kindFilter ? computeKindKeep() : null;
+    const searchHits = q ? computeSearchHits(q) : null;
+    nodeCache.forEach((el, id) => {
+      const inKind = !kindKeep || kindKeep.has(id);
+      const inSearch = !searchHits || searchHits.has(id);
+      const inTrace = !traceNodeSet || traceNodeSet.has(id);
+      el.classList.toggle("match", !!(searchHits && searchHits.has(id)));
+      el.classList.toggle("hl", !!(traceNodeSet && traceNodeSet.has(id) && id !== traceId));
+      el.classList.toggle("dim", !inKind || !inSearch || !inTrace);
     });
-    edgeEls.forEach(({ g }, i) => {
-      g.classList.toggle("hl", edgeSet.has(i));
-      g.classList.toggle("dim", !edgeSet.has(i));
+    // keep an edge lit if it touches a kept node — shows what the kind connects to
+    edgeEls.forEach(({ e, g }, i) => {
+      const inKindEdge = !kindKeep || kindKeep.has(e.from) || kindKeep.has(e.to);
+      const inTraceEdge = !traceEdgeSet || traceEdgeSet.has(i);
+      g.classList.toggle("hl", !!(traceEdgeSet && traceEdgeSet.has(i)));
+      g.classList.toggle("dim", !inKindEdge || !inTraceEdge);
     });
   }
 
@@ -899,7 +917,7 @@
       else if (!sheet.hidden) closeSheet();
       else if (tourActive) stopTour();
       else if (selectedId) clearSelection();
-      else if (kindFilter) { kindFilter = null; applyKindFilter(); }
+      else if (kindFilter) { kindFilter = null; applyVisualState(); }
       else if (focusRootId) exitFocus();
       return;
     }
@@ -1303,21 +1321,18 @@
 
   // ---------- search (matches hidden children too, marks their container) ----------
   const search = document.getElementById("search");
-  function applySearch() {
-    const q = search.value.trim().toLowerCase();
-    nodeCache.forEach(el => el.classList.remove("dim", "match"));
-    if (!q) return;
+  // Set-computing half of the old applySearch: which nodes the query matches,
+  // including hidden children (their collapsed container is the id reported
+  // back here via effectiveId). The writing half now lives in applyVisualState.
+  function computeSearchHits(q) {
     const hits = new Set();
     for (const n of allNodes) {
       const hay = `${n.label || ""} ${n.sub || ""} ${n.id} ${n.kind} ${n.group || ""} ${n.detail || ""}`.toLowerCase();
       if (hay.includes(q)) hits.add(effectiveId(n.id));
     }
-    nodeCache.forEach((el, id) => {
-      el.classList.toggle("match", hits.has(id));
-      el.classList.toggle("dim", !hits.has(id));
-    });
+    return hits;
   }
-  search.addEventListener("input", applySearch);
+  search.addEventListener("input", applyVisualState);
 
   // ---------- theme switching ----------
   const themeSelect = document.getElementById("theme-select");
@@ -1529,7 +1544,7 @@
   function startTour() {
     const seq = tourSequence();
     if (!seq.length) return;
-    if (kindFilter) { kindFilter = null; applyKindFilter(); }
+    if (kindFilter) { kindFilter = null; applyVisualState(); }
     tourActive = true;
     playBtn.classList.add("active");
     runTourStop(seq, 0);
