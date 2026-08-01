@@ -1588,6 +1588,10 @@
   }
   function tweenCamera(TX, TY, S, ms) {
     if (camRAF) cancelAnimationFrame(camRAF);
+    // The CSS reduced-motion block can't reach a JS-driven transform tween, so
+    // every chip jump and every tour stop still flew the whole viewport. Jump
+    // instead; scheduleHops keeps its own timers, so the tour still sequences.
+    if (prefersReduced.matches) { tx = TX; ty = TY; scale = S; apply(); camRAF = null; return; }
     const sx = tx, sy = ty, ss = scale, t0 = performance.now();
     const ease = u => 1 - Math.pow(1 - u, 3);
     const frame = now => {
