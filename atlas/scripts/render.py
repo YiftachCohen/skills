@@ -100,6 +100,11 @@ BACKTICKED_RE = re.compile(r"`([A-Za-z0-9_-]+)`")
 OMITTED_RE = re.compile(r"\bomitted\b", re.I)
 # A cardinal followed by the thing it counts: "30 backends", "~140 tables".
 COUNT_RE = re.compile(r"(?<![\w.:/])(~?\d[\d,]*)\s+([A-Za-z][\w-]*)")
+# Nouns that mark the number as an identifier rather than a count.
+IDENTIFIER_NOUNS = {"port", "ports", "rfc", "status", "code", "codes", "version",
+                    "v", "http", "https", "id", "ids", "issue", "pr", "line",
+                    "lines", "col", "column", "px", "ms", "s", "sec", "seconds",
+                    "minutes", "hours", "days"}
 
 # --- edge evidence (see check_edges) ------------------------------------------
 # What reaching a store looks like in source, in the languages an atlas points at.
@@ -1124,18 +1129,20 @@ def counted_claims(nodes):
         seen = []
         for m in COUNT_RE.finditer(text):
             num, noun = m.group(1), m.group(2)
-            bare = num.lstrip("~").replace(",", "")
             if noun.lower() in NOISE:
                 continue
             # Do NOT filter on digit count: "137 tables" is HTTP-status-shaped
             # and is a real claim, and dropping it silently is the failure this
             # list exists to prevent. Filter on what follows the number instead.
-            # An exception class ("429 TooManyRequests") is CamelCase; an
-            # identifier (RFC 8628, port 5050) is a bare 4+ digit run, whereas a
-            # genuine large count is written with a separator ("1,519 files").
+            # An exception class ("429 TooManyRequests") is CamelCase.
             if noun[:1].isupper() and any(c.isupper() for c in noun[1:]):
                 continue
-            if "," not in num and bare.isdigit() and len(bare) >= 4:
+            # The old rule dropped any bare 4+-digit number on the theory that a
+            # real count carries a separator. An LLM writes "5000 rows" at least
+            # as often as "5,000 rows", so that dropped exactly the large round
+            # counts most worth checking. Discriminate on what is being counted:
+            # an identifier is introduced by its scheme, not by a unit noun.
+            if noun.lower() in IDENTIFIER_NOUNS:
                 continue
             seen.append(f"{num} {noun}")
         if seen:

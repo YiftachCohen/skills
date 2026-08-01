@@ -99,19 +99,22 @@ class TestCountedClaims(unittest.TestCase):
             {"id": "d", "sub": "1,519 files"},
             {"id": "e", "sub": "429 TooManyRequests"},
             {"id": "f", "sub": "RFC 8628"},
-            # TODO(plan 005): "1000 users" is currently DROPPED (bare 4-digit
-            # run with no separator reads as an identifier) — this is the
-            # current, wrong-for-genuine-counts behavior; plan 005 changes it.
+            # As of plan 005, a bare 4+-digit round number is no longer
+            # dropped on its digit shape alone — only IDENTIFIER_NOUNS (port,
+            # RFC, status, ...) mark a number as an identifier rather than a
+            # count, so "1000 users" is now a reportable claim.
             {"id": "g", "sub": "1000 users"},
+            {"id": "h", "sub": "port 5050"},
         ]
         found = dict(render.counted_claims(nodes))
         self.assertEqual(found.get("a"), "30 backends")
         self.assertEqual(found.get("b"), "~140 tables")
         self.assertEqual(found.get("c"), "137 tables")
         self.assertEqual(found.get("d"), "1,519 files")
+        self.assertEqual(found.get("g"), "1000 users")
         self.assertNotIn("e", found)
         self.assertNotIn("f", found)
-        self.assertNotIn("g", found)
+        self.assertNotIn("h", found)
 
 
 class TestNameHelpers(unittest.TestCase):
