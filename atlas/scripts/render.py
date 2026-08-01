@@ -920,6 +920,24 @@ def fill(template, values):
     return pattern.sub(lambda m: values[m.group(0)], template)
 
 
+def html_safe_json(obj):
+    """JSON that cannot alter the HTML tokenizer state it is embedded in.
+
+    The payload is inlined into a <script> element, so any sequence the parser
+    treats as markup has to be encoded rather than reasoned about. Escaping
+    `</` alone is not enough: `<!--` puts the tokenizer into script-data-escaped
+    state and a following `<script` into double-escaped state, after which the
+    element's own `</script>` no longer closes it — one `detail` sentence
+    describing an HTML snippet then swallows the entire viewer, and nothing in
+    the pipeline notices because the file is still written and still valid JSON.
+    Encoding <, > and & at the JSON level makes the question moot.
+    """
+    return (json.dumps(obj)
+            .replace("<", "\\u003c")
+            .replace(">", "\\u003e")
+            .replace("&", "\\u0026"))
+
+
 def load_template():
     """Read the three viewer sources and return the single-file HTML template.
 
@@ -1184,18 +1202,17 @@ def main():
         return
 
     template = load_template()
-    # </script> inside a JSON string would end the tag early; escape it.
-    payload = json.dumps(data).replace("</", "<\\/")
+    payload = html_safe_json(data)
     # The "Ask agent" prompts cite this so the agent can read the whole graph;
     # only useful when it is a repo-relative path, not someone's home directory.
     rel = None
     if not atlas_path.is_absolute() and ".." not in atlas_path.parts:
         rel = atlas_path.as_posix()
-    config = json.dumps({
+    config = html_safe_json({
         "theme": args.theme,
         "onlineIcons": args.online_icons,
         "atlasPath": rel,
-    }).replace("</", "<\\/")
+    })
     html = fill(template, {PLACEHOLDER: payload, CONFIG_PLACEHOLDER: config})
 
     out_path = Path(args.out) if args.out else atlas_path.with_name("atlas.html")
