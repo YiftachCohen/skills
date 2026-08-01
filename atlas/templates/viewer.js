@@ -509,6 +509,7 @@
       if (btn) {
         btn.textContent = expanded.has(n.id) ? "−" : "+" + childrenOf.get(n.id).length;
         btn.title = expanded.has(n.id) ? "Collapse" : "Expand " + childrenOf.get(n.id).length + " components";
+        el.setAttribute("aria-expanded", expanded.has(n.id) ? "true" : "false");
       }
     }
 
@@ -623,9 +624,23 @@
       label.className = "group-label";
       if (isC) {
         const cid = g.slice(4);
-        label.textContent = "▾ " + (byId.get(cid).label || cid);
+        const cLabel = byId.get(cid).label || cid;
+        label.textContent = "▾ " + cLabel;
         label.title = "Collapse";
+        // A <button> here picks up UA border/background chrome that the class
+        // above never resets (it was never written to fight that), so this
+        // stays a span with the ARIA role/keydown added instead — see
+        // viewer.css:435-444, which only styles .group-label by class.
+        label.setAttribute("role", "button");
+        label.setAttribute("tabindex", "0");
+        label.setAttribute("aria-label", "Collapse " + cLabel);
         label.addEventListener("click", () => toggle(cid));
+        label.addEventListener("keydown", ev => {
+          if (ev.key === "Enter" || ev.key === " " || ev.key === "Spacebar") {
+            ev.preventDefault();
+            toggle(cid);
+          }
+        });
       } else {
         label.textContent = g.slice(4);
       }
@@ -751,6 +766,12 @@
     el.dataset.kind = KINDS[n.kind] ? n.kind : "external";
     const k = kindOf(n);
     el.style.setProperty("--kind-color", k.color);
+    // Keyboard-reachable: this is the primary unit of the map and, until now,
+    // pointer-only on an artifact whose whole point is to be shared.
+    el.setAttribute("tabindex", "0");
+    el.setAttribute("role", "button");
+    el.setAttribute("aria-label", `${n.label || n.id}, ${k.label}`);
+    if (isContainer(n.id)) el.setAttribute("aria-expanded", expanded.has(n.id) ? "true" : "false");
     const kindRow = document.createElement("div");
     kindRow.className = "kind-row";
     kindRow.innerHTML = glyphSvg(kindKey(n)) + `<span class="kind-tag">${k.label}</span>`;
@@ -787,6 +808,13 @@
       showDetail(n.id, el);
     });
     el.addEventListener("dblclick", ev => { ev.stopPropagation(); setFocus(n.id); });
+    // Enter/Space mirror click (select + open detail); Shift+Enter mirrors
+    // dblclick (focus mode). preventDefault on Space so the page doesn't scroll.
+    el.addEventListener("keydown", ev => {
+      if (ev.key === "Enter" && ev.shiftKey) { ev.preventDefault(); setFocus(n.id); return; }
+      if (ev.key === "Enter") { el.click(); return; }
+      if (ev.key === " " || ev.key === "Spacebar") { ev.preventDefault(); el.click(); }
+    });
     return el;
   }
 
