@@ -4,7 +4,7 @@
 a single self-contained HTML file.
 
 ```bash
-python3 scripts/render.py .atlas/atlas.json [--open] [--check] [-o out.html]
+python3 scripts/render.py .atlas/atlas.json [--open] [--check] [--strict] [-o out.html]
                           [--theme living|print|terrain] [--online-icons]
                           [--repo PATH] [--no-source-check]
                           [--edges] [--inventory [PATH]]
@@ -12,8 +12,11 @@ python3 scripts/render.py .atlas/atlas.json [--open] [--check] [-o out.html]
 
 | flag | what it does |
 |---|---|
-| `--check` | validate and write nothing; also confirms every `sourceRef` resolves to a real file and to a line worth jumping to, naming the line to use instead when it lands on a comment, a blank or a bare block opener. Flags the `service` share at the **top level** as well as over all nodes, and any edge pointing at its own container. Prints a **counted-claims worklist** — every `sub`/`detail` asserting a number — because nothing here can verify "30 backends", and an audited map had 8 of 32 counts wrong |
-| `--edges` | looks in the `from` node's file for the line that performs each edge's claim, and lists the edges where nothing could |
+| `-o`, `--out` | output HTML path (default: `atlas.html` beside the atlas file) |
+| `--open` | open the rendered file in the default browser once it's written |
+| `--check` | validate and write nothing; also confirms every `sourceRef` resolves to a real file and to a line worth jumping to, naming the line to use instead when it lands on a comment, a blank or a bare block opener. Flags the `service` share at the **top level** as well as over all nodes, and any edge pointing at its own container. Prints a **counted-claims worklist** — every `sub`/`detail` asserting a number — because nothing here can verify "30 backends", and an audited map had 8 of 32 counts wrong. Also prints a **labelled-edges worklist** (skipped when `--edges` already produced a sharper one) so each label can be verified at a call site |
+| `--strict` | exit 1 if anything warned, not just on errors — the "re-run until it is clean" contract SKILL.md describes, made machine-checkable. Works in both `--check` and render mode |
+| `--edges` | looks in the `from` node's file for the line that performs each edge's claim, and lists the edges where nothing could. Does nothing without a repo root: pass `--repo`, or let it infer from the `<repo>/.atlas/atlas.json` layout — otherwise it's silently a no-op with a warning telling you to pass `--repo` |
 | `--inventory` | reads the dispositions in `.atlas/inventory.md` back, verifies **every** id named on a line exists (a line whose first id is live and whose rest are stale used to pass), and counts what was never dispositioned |
 | `--repo` | repo root the `sourceRef`s are relative to (inferred from the `<repo>/.atlas/atlas.json` layout; pass it explicitly when the atlas lives elsewhere) |
 | `--no-source-check` | skip the `sourceRef` file check |
@@ -79,6 +82,24 @@ Flags reading *inconclusive* are different from the rest: the `from` node's
 were scanned, and nothing was found in that slice. That is not evidence of
 absence — before this was reported, a container over the cap could pass
 vacuously while its edges went unchecked.
+
+## `evals/legibility/stats.py` — measuring the opening view
+
+`render.py --check` validates the contract; `stats.py` measures the *view*
+that contract produces. It reconstructs what the viewer draws at open
+(children collapsed, edges re-routed to their top-level ancestor and merged)
+and reports the load each element puts on a reader: hub fan-out, drawn-edge
+density, the label ratio after containers collapse, groups spanning too many
+kinds, oversized containers, and top-level nodes left floating with no visible
+edge. Thresholds are heuristics from eyeballing real maps, not laws — worth
+running on anything large, on top of `--check`.
+
+```bash
+python3 /abs/path/to/skill/evals/legibility/stats.py /abs/repo/.atlas/atlas.json
+```
+
+Exit code is always 0 unless the file is unreadable; its warnings are signal
+for a human or vision grader to go look at, not a gate.
 
 ## What the rendered viewer does at runtime
 

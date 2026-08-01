@@ -4,7 +4,8 @@
     "name": "This project name is deliberately way past the forty eight character cap",
     "slug": "Bad_Slug_With_CAPS_and_underscores_and_way_too_long_here",
     "tagline": "This tagline is intentionally engineered to run well beyond the eighty character maximum allowed",
-    "date": "2026-07-27"
+    "date": "2026-07-27",
+    "rules": 3
   },
   "graph": {
     "nodes": [

@@ -32,7 +32,7 @@ HTML file on disk.
      --repo /abs/repo --check --edges --inventory
    ```
    Use targeted edits, not full rewrites, and re-run until it is clean.
-   `evals/legibility/stats.py` additionally measures the *opening* view (hub
+   `/abs/path/to/skill/evals/legibility/stats.py` additionally measures the *opening* view (hub
    fan-out, drawn-edge density, label ratio after containers collapse) — worth
    running on anything large.
 6. **Verify the sentences the checks can't** — see "Details" below. A green
@@ -104,16 +104,22 @@ are fixed, and the CLI prints everything you need.
   },
   "graph": {
     "nodes": [
-      { "id": "chat", "label": "Dashboard chat", "kind": "entry", "sub": "/api/chat" },
+      { "id": "chat", "label": "Dashboard chat", "kind": "entry", "sub": "/api/chat",
+        "sourceRef": "src/app/api/chat/route.ts:18",
+        "detail": "Streams support answers to the dashboard; the only authenticated chat entry point" },
       { "id": "agent", "label": "Support agent", "kind": "agent", "sub": "streamText",
         "sourceRef": "src/agents/support.ts:42",
-        "detail": "Answers tickets with order lookups (<=200, optional)" },
+        "detail": "Answers tickets with order lookups against Postgres, streaming replies back to chat" },
       { "id": "gpt4o", "label": "GPT-4o", "kind": "model", "domain": "openai.com" },
       { "id": "billing", "label": "Billing service", "kind": "service",
-        "sourceRef": "src/services/billing.ts" },
+        "sourceRef": "src/services/billing.ts",
+        "detail": "Owns plan changes and invoice generation for every paid workspace" },
       { "id": "billing-plans", "label": "Plans & quotas", "kind": "service",
-        "parent": "billing", "sourceRef": "src/services/billing/plans.ts" },
-      { "id": "pg", "label": "Postgres", "kind": "store", "domain": "postgresql.org" }
+        "parent": "billing", "sourceRef": "src/services/billing/plans.ts",
+        "detail": "Tracks each workspace's plan tier and enforces its seat and usage quotas" },
+      { "id": "pg", "label": "Postgres", "kind": "store", "domain": "postgresql.org",
+        "sourceRef": "src/db/schema.sql",
+        "detail": "Primary datastore for billing records, plans and support ticket history" }
     ],
     "edges": [
       { "from": "chat", "to": "agent", "kind": "triggers" },
@@ -137,7 +143,7 @@ against, and `--check` prints the number to use.
 | `group` | optional, <=24: nodes sharing a group render as one labeled stack. Group by feature/domain the way a team talks ("Billing"), never by file layout; hub nodes stay ungrouped. One carve-out: when a backend has **two parallel service layers** — an execution engine and the request-path CRUD that authors and drives it, which both pass the runtime test and so are both `service` — the layer is what a teammate names out loud ("core" vs "services"), and `group` is the only thing that can tell them apart. Use it there, and nowhere else that a directory name is the answer. The viewer puts a group in its members' median lane, so one spanning kinds pulls nodes out of their semantic column — a real cost, worth paying when the team genuinely names the thing as one unit. No groups at all beats a forced one. |
 | edge `kind` | optional, prefer setting it: `calls`/`reads`/`writes`/`triggers`/`enqueues`, revealed on flow trace. Two nodes can have more than one edge — a service that both reads and writes a store gets both, not a compromise label. Use `enqueues` for a hand-off that returns before the work happens (a task queue, a job runner, a pub/sub publish): it is where the flow stops being synchronous, which is the first thing a reader needs when the far end never ran. |
 | edge `label` | optional, <=24, always visible — spend it on the few relationships that would surprise a reader ("charges on trial end"). See the label budget below. |
-| edge `evidence` | optional `path:line` — the call site you read that proves this edge. Records a verification the text heuristic can't repeat (DI, barrel re-exports, generated registries), so `--edges` stops re-flagging it. Use it for the few edges that need it, not as a default: attesting everything switches the check off, and `--check` warns past 80% attested. |
+| edge `evidence` | optional `path:line` — the call site you read that proves this edge. Records a verification the text heuristic can't repeat (DI, barrel re-exports, generated registries), so `--edges` stops re-flagging it. Use it for the few edges that need it, not as a default: attesting everything switches the check off, and `--edges` warns past 80% attested, once there are 20 or more edges. |
 | `domain` | optional favicon domain, no scheme (openai.com) — only for things a recognizable company owns; use the product domain for models (claude.ai). |
 | `detail` | <=200: one sentence shown on click. **Treat it as required for internal nodes, like `sourceRef`** — it is what a reader who has never seen the repo actually reads. In a controlled pair of maps of one repo, the one with `detail` on 92% of nodes answered 16/16 comprehension questions and the one with 19% answered 10/16, and every missed answer was a missing sentence rather than a missing box. `--check` warns below 80%. |
 | `sourceRef` | repo path plus `:line` (<=120). Treat it as **required for internal nodes** — it feeds jump-to-code and the viewer's "Ask agent…" prompt, and a node without one produces a vague prompt. Rules below. |
@@ -236,7 +242,7 @@ the edges underneath. Count the budget at the *opening* view, not over the raw
 edge list: collapsed containers merge every child edge into one drawn edge per
 top-level pair, so labels concentrate — a map that passes one-in-four raw has
 opened at more than half its visible edges labeled. Collapse the map in your
-head to top-level pairs and count again, or run `evals/legibility/stats.py`.
+head to top-level pairs and count again, or run `/abs/path/to/skill/evals/legibility/stats.py`.
 Let `kind` carry the ordinary relationships.
 
 **`sourceRef` rules.** Use a path you actually saw — don't infer one from a
@@ -246,6 +252,9 @@ not the doc comment above it, not a bare `const (`, and never the same line as
 the node's parent. A container whose subject is a directory points at the
 directory itself (`src/stores`, `app/api/admin`) with no `:line`; don't borrow
 one member's file, and give every member its own child with its own ref.
+Refs are repo-relative: an absolute path or one containing `..` is rejected
+rather than resolved, because an atlas is a file people send each other and a
+ref is only ever meant to point inside the repo it describes.
 `--check` verifies all of this against the repo.
 
 ## Coverage — the map must account for everything
@@ -359,7 +368,7 @@ one hop, and every one looked correct from the import block. Four shapes:
   cutting it to 6 removed a whole tier of visual noise and lost nothing a reader
   wanted. A hub with traffic in both directions is usually a real dispatcher and
   its fan *is* the point — leave it, and say so in your summary rather than
-  pruning a true story to satisfy a threshold. `evals/legibility/stats.py`
+  pruning a true story to satisfy a threshold. `/abs/path/to/skill/evals/legibility/stats.py`
   prints the in/out split for every hub over the limit. Treat arrows *into* a hub as the highest-risk claims on the map — it
   is the box whose contents everyone assumes and nobody checks. Verify each one
   or leave it out.
@@ -405,7 +414,7 @@ Six shapes recur, all of them honest mistakes:
   all of them, or name the member you read.
 - **A count from an impression.** 8 of 32 counts in one map were wrong. A count
   is a claim: run the command that produces it and paste that number.
-  `--check` lists every counted claim as a worklist for exactly this.
+  `--check` lists the counted claims as a worklist for exactly this.
 - **A dependency claim made from the manifest alone.** A package "pinned in
   pyproject and unused" was in fact a `[tool.uv] override-dependencies` entry —
   not a dependency at all — and the lockfile showed it installed by default

@@ -23,6 +23,25 @@ don't invalidate an existing map.
 
 ---
 
+## Unreleased — checks, not rules
+
+No ruleset bump: nothing here changes what a field means, so no existing map
+needs re-deriving.
+
+- The label budget is now measured at the opening view (edges re-routed to
+  top-level ancestors and merged), matching what SKILL.md always said, and has a
+  12-edge floor like every other ratio check.
+- `--check` prints the ruleset number and notices a map stamped *newer* than the
+  skill, not just older.
+- The counted-claims worklist no longer drops large round numbers ("5000 rows").
+- `--strict` exits non-zero when anything warned — what SKILL.md means by "clean".
+- An inventory disposition must name its id after a disposition keyword to count
+  as reconciled; naming the subject in backticks is no longer enough. **Existing
+  inventories will report new unreconciled lines** — that is the fix working.
+- `sourceRef` and edge `evidence` are resolved strictly inside the repo root.
+- Node ids are restricted to `[A-Za-z0-9_.-]`; a `:` in an id silently dropped
+  every edge on that node in the viewer.
+
 ## 3 — verifiability
 
 Bumped because `cron` changed meaning and several merge rules were added, so

@@ -94,6 +94,11 @@ Try the demo:
 python3 atlas/scripts/render.py atlas/examples/demo.json -o /tmp/demo.html --open
 ```
 
+Two more fixtures live alongside it: `examples/demo-v1.json` is a `version: 1`
+back-compat check — deliberately unstamped with `project.rules`, since it
+predates the field — and `examples/bad-atlas.json` exists to demonstrate cap
+and length violations (`--check` on it is expected to warn).
+
 Validate without writing:
 
 ```bash
@@ -112,7 +117,10 @@ lives elsewhere, or `--no-source-check` to skip.
 
 It also reports the top-level node count (the number the caps are about, not
 just the total), and warns when more than one edge in four carries a label —
-labels never fade, so past that density the map opens as a thicket of text.
+measured at the *opening view* (edges re-routed to top-level ancestors and
+merged, once there are at least 12 of them), not over the raw edge list, since
+that is the density a reader actually meets. Labels never fade, so past that
+density the map opens as a thicket of text.
 
 `validate()` cannot fault an edge: one is structurally valid as long as both
 ends are node ids, so a clean run says nothing about whether "billing writes to

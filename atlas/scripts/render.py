@@ -55,6 +55,10 @@ NODE_KINDS = {"entry", "cron", "agent", "model", "tool", "service", "store", "ex
 EDGE_KINDS = {"calls", "reads", "writes", "triggers", "enqueues"}
 THEMES = ("living", "print", "terrain")
 SLUG_RE = re.compile(r"^[a-z0-9-]{1,48}$")
+# The viewer keys edge ports on the node id, so an id carrying the key's own
+# separator loses its edges silently — the cards draw and every arrow vanishes.
+# Cheaper to refuse the id than to make every consumer defensive.
+NODE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
 # Graph-size ceilings. The legacy topModels/topTools/topIntegrations summary
 # fields are ignored by the viewer and must not be written any more, so there is
@@ -72,8 +76,9 @@ LEN_LIMITS = {
     "sourceRef": 120,
 }
 EDGE_LABEL_LIMIT = 24
-# Labels never fade, so past roughly one per four edges the map opens as a
-# thicket of grey text at fit-zoom and is legible only once you zoom in.
+# Labels never fade, so past roughly one per four edges DRAWN IN THE OPENING
+# VIEW the map opens as a thicket of grey text at fit-zoom and is legible only
+# once you zoom in.
 LABEL_RATIO_CAP = 0.25
 # Below this share of internal nodes carrying a `detail`, the map renders fine
 # and reads thin — see the comprehension evidence in validate().
@@ -95,6 +100,11 @@ BACKTICKED_RE = re.compile(r"`([A-Za-z0-9_-]+)`")
 OMITTED_RE = re.compile(r"\bomitted\b", re.I)
 # A cardinal followed by the thing it counts: "30 backends", "~140 tables".
 COUNT_RE = re.compile(r"(?<![\w.:/])(~?\d[\d,]*)\s+([A-Za-z][\w-]*)")
+# Nouns that mark the number as an identifier rather than a count.
+IDENTIFIER_NOUNS = {"port", "ports", "rfc", "status", "code", "codes", "version",
+                    "v", "http", "https", "id", "ids", "issue", "pr", "line",
+                    "lines", "col", "column", "px", "ms", "s", "sec", "seconds",
+                    "minutes", "hours", "days"}
 
 # --- edge evidence (see check_edges) ------------------------------------------
 # What reaching a store looks like in source, in the languages an atlas points at.
@@ -153,10 +163,46 @@ EDGE_SOURCE_EXT = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".go", ".rb", ".
                    ".java", ".swift", ".kt", ".m", ".cs", ".php", ".sql", ".yml",
                    ".yaml", ".sh", ".html", ".jinja", ".j2", ".erb", ".vue", ".svelte"}
 DIR_FILE_CAP = 40
+# Directories that are never the subject of a map and routinely hold 100x more
+# files than the source does. Walking them to keep 40 files is the difference
+# between --edges taking a second and taking a minute on a monorepo.
+SKIP_DIRS = {"node_modules", ".git", ".venv", "venv", "dist", "build", ".next",
+             "vendor", "__pycache__", ".tox", "target", ".mypy_cache", ".pytest_cache"}
 
 
 def validate(data):
     errors, warnings = [], []
+
+    # --check is the mode that exists to diagnose a malformed map, so it must
+    # report the malformation rather than raise out of it. Everything below
+    # indexes into dicts and iterates lists; normalise once, here, and return
+    # early when the shape is too broken for the rest to mean anything. The
+    # tuple arity matches the normal return below (errors, warnings,
+    # top-level/node/edge counts) so main() can unpack it unconditionally —
+    # the counts are 0 here because nothing downstream of the guard ran.
+    if not isinstance(data, dict):
+        return [f"top level is {type(data).__name__}, expected a JSON object"], [], 0, 0, 0
+
+    graph = data.get("graph")
+    if graph is not None and not isinstance(graph, dict):
+        return [f"graph is {type(graph).__name__}, expected an object"], [], 0, 0, 0
+    graph = graph or {}
+
+    raw_nodes = graph.get("nodes") or []
+    raw_edges = graph.get("edges") or []
+    if not isinstance(raw_nodes, list):
+        return [f"graph.nodes is {type(raw_nodes).__name__}, expected a list"], [], 0, 0, 0
+    if not isinstance(raw_edges, list):
+        return [f"graph.edges is {type(raw_edges).__name__}, expected a list"], [], 0, 0, 0
+
+    nodes = [n for n in raw_nodes if isinstance(n, dict)]
+    edges = [e for e in raw_edges if isinstance(e, dict)]
+    for i, n in enumerate(raw_nodes):
+        if not isinstance(n, dict):
+            errors.append(f"nodes[{i}] is {type(n).__name__}, expected an object")
+    for i, e in enumerate(raw_edges):
+        if not isinstance(e, dict):
+            errors.append(f"edges[{i}] is {type(e).__name__}, expected an object")
 
     if data.get("version") not in (1, 2):
         warnings.append(f"version is {data.get('version')!r}, expected 1 or 2")
@@ -177,12 +223,17 @@ def validate(data):
                 "Do NOT take the incremental path: re-derive the kinds with a "
                 "clean scan, then set project.rules. See CHANGELOG.md"
             )
-        elif isinstance(seen_rules, int) and seen_rules < cur:
+        elif isinstance(seen_rules, int) and seen_rules != cur:
+            direction = ("was authored against older rules and the incremental path "
+                         "would carry them forward"
+                         if seen_rules < cur else
+                         "was authored against NEWER rules than this copy of the "
+                         "skill — update the skill rather than the map")
             warnings.append(
                 f"project.rules is {seen_rules}, this skill is ruleset {cur} — the "
-                "map was authored against older rules and the incremental path "
-                f"would carry them forward. Read CHANGELOG.md for what changed "
-                f"between {seen_rules} and {cur}, then re-scan what it affects"
+                f"map {direction}. Read CHANGELOG.md for what changed between "
+                f"{min(seen_rules, cur)} and {max(seen_rules, cur)}, then re-scan "
+                "what it affects"
             )
         elif not isinstance(seen_rules, int):
             warnings.append(f"project.rules is {seen_rules!r}, expected an integer")
@@ -203,11 +254,17 @@ def validate(data):
                 f"project.slug {slug!r} does not match ^[a-z0-9-]{{1,48}}$"
             )
 
-    graph = data.get("graph") or {}
-    nodes = graph.get("nodes") or []
-    edges = graph.get("edges") or []
     if not nodes:
         errors.append("graph.nodes is empty — nothing to render")
+
+    # A non-string id makes `ids.count(i)` / `set(ids)` below raise
+    # `TypeError: unhashable type` for a list or dict id — report it as an
+    # error and drop the node from the id-keyed maps rather than crash.
+    for i, n in enumerate(nodes):
+        nid = n.get("id")
+        if nid is not None and not isinstance(nid, str):
+            errors.append(f"nodes[{i}] id {nid!r} is {type(nid).__name__}, expected a string")
+    nodes = [n for n in nodes if isinstance(n.get("id"), str) or n.get("id") is None]
 
     ids = [n.get("id") for n in nodes]
     dupes = {i for i in ids if ids.count(i) > 1}
@@ -218,6 +275,13 @@ def validate(data):
     for i, n in enumerate(nodes):
         if not n.get("id"):
             errors.append(f"nodes[{i}] has no id")
+        nid = n.get("id")
+        if isinstance(nid, str) and nid and not NODE_ID_RE.match(nid):
+            errors.append(
+                f"node {nid!r} has an id outside [A-Za-z0-9_.-] (max 64) — ids key "
+                "the viewer's edge ports, and a ':' or a space there drops every "
+                "edge on the node while the card still draws"
+            )
         if not n.get("label"):
             warnings.append(f"node {n.get('id')!r} has no label")
         if n.get("kind") not in NODE_KINDS:
@@ -231,6 +295,19 @@ def validate(data):
                 warnings.append(
                     f"node {n.get('id')!r} {field} is {len(val)} chars (cap {limit})"
                 )
+
+    # A non-string parent breaks `p not in id_set` and the Counter() below the
+    # same way a non-string id breaks ids.count()/set(ids) above — report it
+    # and treat the node as parentless (dropped from the parent maps) rather
+    # than crash.
+    for n in nodes:
+        p = n.get("parent")
+        if p is not None and not isinstance(p, str):
+            errors.append(
+                f"node {n.get('id')!r} parent {p!r} is {type(p).__name__}, "
+                "expected a string"
+            )
+            n["parent"] = None
 
     parents = {n.get("id"): n.get("parent") for n in nodes}
     for n in nodes:
@@ -398,16 +475,35 @@ def validate(data):
                     "map and record it in the inventory as omitted"
                 )
 
-    labelled = sum(1 for e in edges if e.get("label"))
-    if edges and labelled / len(edges) > LABEL_RATIO_CAP:
+    # SKILL.md states the rule at the opening view, and that is the only place
+    # it means anything: collapsing containers merges every child edge into one
+    # drawn edge per top-level pair, so labels concentrate. A map that passes
+    # one-in-four raw routinely opens at more than half its visible edges
+    # labelled. Count what the reader actually meets.
+    drawn = {}
+    for e in edges:
+        f, t = e.get("from"), e.get("to")
+        if f not in id_set or t not in id_set:
+            continue
+        fa, ta = top_ancestor(f), top_ancestor(t)
+        if fa == ta:
+            continue  # internal to a container; invisible until expanded
+        key = (fa, ta)
+        drawn[key] = drawn.get(key, False) or bool(e.get("label"))
+    labelled = sum(1 for has_label in drawn.values() if has_label)
+    # A floor, like every other ratio check here: on a six-node map two
+    # load-bearing labels are not a thicket, and warning about them pushes the
+    # agent to delete true information to silence a meaningless statistic.
+    if len(drawn) >= 12 and labelled / len(drawn) > LABEL_RATIO_CAP:
         warnings.append(
-            f"{labelled} of {len(edges)} edges carry a label (1 per "
-            f"{len(edges) / labelled:.1f}) — past 1 per {1 / LABEL_RATIO_CAP:.0f} "
-            "the map opens as a thicket of text; let `kind` carry the ordinary "
-            "relationships and keep labels for the ones that would surprise a reader"
+            f"{labelled} of {len(drawn)} edges drawn in the opening view carry a "
+            f"label ({labelled / len(drawn):.0%}) — past "
+            f"{LABEL_RATIO_CAP:.0%} the map opens as a thicket of text; let `kind` "
+            "carry the ordinary relationships and keep labels for the ones that "
+            "would surprise a reader"
         )
 
-    return errors, warnings, len(top_level)
+    return errors, warnings, len(top_level), len(nodes), len(edges)
 
 
 def infer_repo_root(atlas_path):
@@ -420,6 +516,33 @@ def infer_repo_root(atlas_path):
     """
     p = atlas_path.resolve()
     return p.parent.parent if p.parent.name == ".atlas" else None
+
+
+def resolve_in_repo(repo_root, rel):
+    """The path `rel` names inside `repo_root`, or None if it escapes.
+
+    `sourceRef` is defined as a repo-relative path (SKILL.md), but an atlas is
+    a file people send each other, so the contract has to be enforced rather
+    than assumed: `Path("/repo") / "/etc/passwd"` is `/etc/passwd`, because a
+    plain join drops the root as soon as the right-hand side is absolute, and
+    `..` segments walk out just as easily. Every read below reports what it
+    found — whether a path exists, how many lines it has, whether a given line
+    is code or a comment — so an unconfined ref turns those warnings into a
+    read oracle over anything the invoking user can open.
+    """
+    if not rel:
+        return None
+    candidate = Path(rel)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        return None
+    try:
+        target = (repo_root / candidate).resolve()
+    except OSError:
+        return None
+    root = repo_root.resolve()
+    # `is_relative_to` is 3.9+; this form works on the 3.8 floor the CI matrix
+    # pins, and treats the root itself as inside.
+    return target if target == root or root in target.parents else None
 
 
 def describe_weak_line(text):
@@ -470,7 +593,9 @@ def describe_ref(ref, repo_root):
     number and the line's substance are all checked before the edge is excused.
     """
     rel, _, line = ref.partition(":")
-    target = repo_root / rel
+    target = resolve_in_repo(repo_root, rel)
+    if target is None:
+        return "is not a path inside the repo — evidence is a repo-relative call site"
     if not target.exists():
         return f"does not exist in {repo_root}"
     if not line:
@@ -484,7 +609,7 @@ def describe_ref(ref, repo_root):
         lines = target.read_text(errors="replace").splitlines()
     except OSError:
         return None
-    if int(line) > max(len(lines), 1):
+    if not lines or int(line) > len(lines):
         return f"points past the end of the file ({len(lines)} lines)"
     what = describe_weak_line(lines[int(line) - 1]) if int(line) >= 1 else None
     return f"lands on {what} line — point at the call itself" if what else None
@@ -506,7 +631,14 @@ def check_source_refs(nodes, repo_root):
             continue
         checked += 1
         rel, _, line = ref.partition(":")
-        target = repo_root / rel
+        target = resolve_in_repo(repo_root, rel)
+        if target is None:
+            warnings.append(
+                f"node {n.get('id')!r} sourceRef {ref!r} is not a path inside the repo "
+                "— sourceRef is repo-relative; an absolute path or one with '..' "
+                "points somewhere the map's reader does not have"
+            )
+            continue
         if not target.exists():
             warnings.append(
                 f"node {n.get('id')!r} sourceRef {ref!r} does not exist in {repo_root} "
@@ -519,7 +651,7 @@ def check_source_refs(nodes, repo_root):
             except OSError:
                 lines = None
             if lines is not None:
-                if int(line) > max(len(lines), 1):
+                if not lines or int(line) > len(lines):
                     warnings.append(
                         f"node {n.get('id')!r} sourceRef {ref!r} points past the end of "
                         f"the file ({len(lines)} lines)"
@@ -565,15 +697,25 @@ def edge_source(node, repo_root):
     scan was partial and reports those as inconclusive instead.
     """
     ref = (node.get("sourceRef") or "").partition(":")[0]
-    if not ref:
+    target = resolve_in_repo(repo_root, ref)
+    if target is None:
         return None, False
-    target = repo_root / ref
     files, truncated = [], False
     if target.is_file():
         files = [target]
     elif target.is_dir():
-        found = [f for f in sorted(target.rglob("*"))
-                 if f.is_file() and f.suffix in EDGE_SOURCE_EXT]
+        found = []
+        for dirpath, dirnames, filenames in os.walk(target):
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS
+                           and not d.startswith(".")]
+            for name in filenames:
+                if Path(name).suffix in EDGE_SOURCE_EXT:
+                    found.append(Path(dirpath) / name)
+            # One past the cap is enough to know the scan was partial, which is
+            # all the caller reports; keep walking no further.
+            if len(found) > DIR_FILE_CAP:
+                break
+        found.sort()
         truncated = len(found) > DIR_FILE_CAP
         files = found[:DIR_FILE_CAP]
     if not files:
@@ -920,6 +1062,24 @@ def fill(template, values):
     return pattern.sub(lambda m: values[m.group(0)], template)
 
 
+def html_safe_json(obj):
+    """JSON that cannot alter the HTML tokenizer state it is embedded in.
+
+    The payload is inlined into a <script> element, so any sequence the parser
+    treats as markup has to be encoded rather than reasoned about. Escaping
+    `</` alone is not enough: `<!--` puts the tokenizer into script-data-escaped
+    state and a following `<script` into double-escaped state, after which the
+    element's own `</script>` no longer closes it — one `detail` sentence
+    describing an HTML snippet then swallows the entire viewer, and nothing in
+    the pipeline notices because the file is still written and still valid JSON.
+    Encoding <, > and & at the JSON level makes the question moot.
+    """
+    return (json.dumps(obj)
+            .replace("<", "\\u003c")
+            .replace(">", "\\u003e")
+            .replace("&", "\\u0026"))
+
+
 def load_template():
     """Read the three viewer sources and return the single-file HTML template.
 
@@ -974,18 +1134,20 @@ def counted_claims(nodes):
         seen = []
         for m in COUNT_RE.finditer(text):
             num, noun = m.group(1), m.group(2)
-            bare = num.lstrip("~").replace(",", "")
             if noun.lower() in NOISE:
                 continue
             # Do NOT filter on digit count: "137 tables" is HTTP-status-shaped
             # and is a real claim, and dropping it silently is the failure this
             # list exists to prevent. Filter on what follows the number instead.
-            # An exception class ("429 TooManyRequests") is CamelCase; an
-            # identifier (RFC 8628, port 5050) is a bare 4+ digit run, whereas a
-            # genuine large count is written with a separator ("1,519 files").
+            # An exception class ("429 TooManyRequests") is CamelCase.
             if noun[:1].isupper() and any(c.isupper() for c in noun[1:]):
                 continue
-            if "," not in num and bare.isdigit() and len(bare) >= 4:
+            # The old rule dropped any bare 4+-digit number on the theory that a
+            # real count carries a separator. An LLM writes "5000 rows" at least
+            # as often as "5,000 rows", so that dropped exactly the large round
+            # counts most worth checking. Discriminate on what is being counted:
+            # an identifier is introduced by its scheme, not by a unit noun.
+            if noun.lower() in IDENTIFIER_NOUNS:
                 continue
             seen.append(f"{num} {noun}")
         if seen:
@@ -1015,7 +1177,13 @@ def check_inventory(inv_path, nodes):
         # Only bullets are inventory items; headings and prose are scaffolding.
         if not s.startswith(("- ", "* ")) or s.endswith(":"):
             continue
-        hits = [t for t in BACKTICKED_RE.findall(s) if t in ids]
+        # A disposition has to dispose. Any backticked token that happens to be
+        # a node id used to count, which meant an item that merely *names* its
+        # own subject in backticks — the natural way to write the list — read as
+        # reconciled without anything having been reconciled. SKILL.md states
+        # this contract directly: a line that doesn't name an id after a
+        # disposition keyword is not a disposition.
+        #
         # A disposition may name several ids ("children `a`, `b`, `c`"). Every
         # one has to exist: a line whose first id is live and whose rest are
         # stale used to pass as "mapped", so deleting a node during a merge left
@@ -1023,8 +1191,9 @@ def check_inventory(inv_path, nodes):
         # absent — it looks checked.
         named = [t for group in INVENTORY_REF_RE.findall(s)
                  for t in BACKTICKED_RE.findall(group)]
+        live = [t for t in named if t in ids]
         dead = sorted({t for t in named if t not in ids})
-        if hits:
+        if live:
             mapped += 1
             if dead:
                 warnings.append(
@@ -1044,7 +1213,8 @@ def check_inventory(inv_path, nodes):
             unreconciled += 1
             warnings.append(
                 f"{inv_path.name}:{i} names no node and is not marked omitted: "
-                f"{s[:70]!r}"
+                f"{s[:70]!r} — a disposition names the id after a keyword "
+                "(child `x`, detail on `y`) or says 'omitted: <reason>'"
             )
     total = mapped + omitted + unreconciled
     if not total:
@@ -1060,6 +1230,9 @@ def main():
     ap.add_argument("-o", "--out", help="output HTML path (default: alongside atlas.json)")
     ap.add_argument("--open", action="store_true", help="open the result in the default browser")
     ap.add_argument("--check", action="store_true", help="validate only, write nothing")
+    ap.add_argument("--strict", action="store_true",
+                    help="exit 1 if anything warned, not just on errors — "
+                         "what SKILL.md means by 'clean'")
     ap.add_argument("--theme", choices=THEMES, default="living",
                     help="visual theme (default: living)")
     ap.add_argument("--online-icons", action="store_true",
@@ -1085,7 +1258,7 @@ def main():
     except json.JSONDecodeError as e:
         sys.exit(f"error: {atlas_path} is not valid JSON: {e}")
 
-    errors, warnings, top_level_count = validate(data)
+    errors, warnings, top_level_count, node_count, edge_count = validate(data)
 
     repo_root = Path(args.repo).resolve() if args.repo else infer_repo_root(atlas_path)
     source_note = ""
@@ -1168,30 +1341,42 @@ def main():
                 print(f"  {nid}  {claim}", file=sys.stderr)
         if inv_note:
             print(inv_note, file=sys.stderr)
+        ruleset = current_ruleset()
+        rules_note = f", ruleset {ruleset}" if ruleset is not None else ""
+        warn_note = (f" — {len(warnings)} warning(s); not clean until 0"
+                     if warnings else "")
         print(f"{atlas_path} is valid "
-              f"({top_level_count} top-level of {len(data['graph']['nodes'])} nodes, "
-              f"{len(data['graph'].get('edges', []))} edges{source_note})")
+              f"({top_level_count} top-level of {node_count} nodes, "
+              f"{edge_count} edges{source_note}{rules_note}){warn_note}")
+        # Warnings are the whole quality bar for a map — SKILL.md tells the
+        # agent to re-run until it is clean, and without this a check that
+        # always exits 0 cannot gate anything on that.
+        if args.strict and warnings:
+            sys.exit(1)
         return
 
     template = load_template()
-    # </script> inside a JSON string would end the tag early; escape it.
-    payload = json.dumps(data).replace("</", "<\\/")
+    payload = html_safe_json(data)
     # The "Ask agent" prompts cite this so the agent can read the whole graph;
     # only useful when it is a repo-relative path, not someone's home directory.
     rel = None
     if not atlas_path.is_absolute() and ".." not in atlas_path.parts:
         rel = atlas_path.as_posix()
-    config = json.dumps({
+    config = html_safe_json({
         "theme": args.theme,
         "onlineIcons": args.online_icons,
         "atlasPath": rel,
-    }).replace("</", "<\\/")
+    })
     html = fill(template, {PLACEHOLDER: payload, CONFIG_PLACEHOLDER: config})
 
     out_path = Path(args.out) if args.out else atlas_path.with_name("atlas.html")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html)
     print(f"wrote {out_path}")
+    # Same gate as the --check path above: a rendered map with open warnings
+    # is not "clean" by SKILL.md's definition either, so --strict applies here too.
+    if args.strict and warnings:
+        sys.exit(1)
 
     if args.open:
         if sys.platform == "win32":
