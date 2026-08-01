@@ -617,7 +617,7 @@
     svg.setAttribute("width", maxX + 200);
     svg.setAttribute("height", maxY + 200);
     // spread attachment points along each node side, ordered by the other end's y
-    const ports = new Map(); // "id:side" -> [{i, otherY}]
+    const ports = new Map(); // id -> {left: [{i, otherY}], right: [{i, otherY}]}
     const anchor = [];
     curEdges.forEach((e, i) => {
       const a = pos.get(e.from), b = pos.get(e.to);
@@ -625,24 +625,27 @@
       const sideA = backward ? "left" : "right";
       const sideB = backward ? "right" : "left";
       for (const [id, side, otherY] of [[e.from, sideA, b.y + b.h / 2], [e.to, sideB, a.y + a.h / 2]]) {
-        const key = id + ":" + side;
-        if (!ports.has(key)) ports.set(key, []);
-        ports.get(key).push({ i, otherY });
+        let sides = ports.get(id);
+        if (!sides) { sides = { left: [], right: [] }; ports.set(id, sides); }
+        sides[side].push({ i, otherY });
       }
       anchor[i] = { backward };
     });
-    for (const [key, list] of ports) {
-      const [id] = key.split(":");
+    for (const [id, sides] of ports) {
       const p = pos.get(id);
-      list.sort((u, v) => u.otherY - v.otherY);
-      list.forEach((entry, idx) => {
-        const y = p.y + p.h * (idx + 1) / (list.length + 1);
-        const side = key.endsWith(":left") ? "left" : "right";
-        const x = side === "left" ? p.x : p.x + p.w;
-        const a = anchor[entry.i];
-        const isFrom = curEdges[entry.i].from === id && (a.backward ? side === "left" : side === "right");
-        if (isFrom) { a.x1 = x; a.y1 = y; } else { a.x2 = x; a.y2 = y; }
-      });
+      if (!p) continue;   // a node not in the current view has no port to place
+      for (const side of ["left", "right"]) {
+        const list = sides[side];
+        if (!list.length) continue;
+        list.sort((u, v) => u.otherY - v.otherY);
+        list.forEach((entry, idx) => {
+          const y = p.y + p.h * (idx + 1) / (list.length + 1);
+          const x = side === "left" ? p.x : p.x + p.w;
+          const a = anchor[entry.i];
+          const isFrom = curEdges[entry.i].from === id && (a.backward ? side === "left" : side === "right");
+          if (isFrom) { a.x1 = x; a.y1 = y; } else { a.x2 = x; a.y2 = y; }
+        });
+      }
     }
     curEdges.forEach((e, i) => {
       const { x1, y1, x2, y2, backward } = anchor[i];
