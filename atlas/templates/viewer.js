@@ -670,6 +670,10 @@
         });
       }
     }
+    // One rAF per label meant ~500 callbacks that each read geometry right after
+    // the previous one wrote DOM — a forced synchronous layout per edge, during
+    // the container-expand animation. Read all, then write all, in one frame.
+    const pendingLabels = [];
     curEdges.forEach((e, i) => {
       const { x1, y1, x2, y2, backward } = anchor[i];
       if (x1 == null || x2 == null) return;
@@ -694,15 +698,7 @@
         t.setAttribute("text-anchor", "middle");
         t.textContent = e.label;
         g.appendChild(t);
-        requestAnimationFrame(() => {
-          const bb = t.getBBox();
-          const bg = document.createElementNS(SVGNS, "rect");
-          bg.setAttribute("class", "edge-label-bg");
-          bg.setAttribute("x", bb.x - 5); bg.setAttribute("y", bb.y - 2);
-          bg.setAttribute("width", bb.width + 10); bg.setAttribute("height", bb.height + 4);
-          bg.setAttribute("rx", 5);
-          g.insertBefore(bg, t);
-        });
+        pendingLabels.push({ t, g });
       }
       if (e.kind) {
         const t = document.createElementNS(SVGNS, "text");
@@ -715,6 +711,21 @@
       svg.appendChild(g);
       edgeEls.push({ e, g });
     });
+    if (pendingLabels.length) {
+      requestAnimationFrame(() => {
+        const boxes = pendingLabels.map(p => (p.t.isConnected ? p.t.getBBox() : null));
+        pendingLabels.forEach((p, i) => {
+          const bb = boxes[i];
+          if (!bb) return;   // a re-render detached it before this frame ran
+          const bg = document.createElementNS(SVGNS, "rect");
+          bg.setAttribute("class", "edge-label-bg");
+          bg.setAttribute("x", bb.x - 5); bg.setAttribute("y", bb.y - 2);
+          bg.setAttribute("width", bb.width + 10); bg.setAttribute("height", bb.height + 4);
+          bg.setAttribute("rx", 5);
+          p.g.insertBefore(bg, p.t);
+        });
+      });
+    }
 
     adjacency = new Map(curNodes.map(n => [n.id, { out: [], in: [] }]));
     edgeEls.forEach(({ e }, i) => { adjacency.get(e.from).out.push(i); adjacency.get(e.to).in.push(i); });
@@ -1446,7 +1457,16 @@
       c.setAttribute("class", "particle");
       c.style.fill = edgeParticleColor(edgeEls[i].e.kind);
       particlesG.appendChild(c);
-      particles.push({ edgeIdx: i, circle: c, t: Math.random(), speed: 0.10 + Math.random() * 0.06 });
+      // Resolve the path and measure it here rather than per frame: both were
+      // being recomputed 60x a second for a value that only changes when the
+      // layout does — and rebuildParticles is called on every layout change, so
+      // this is exactly where the cache belongs. getTotalLength walks and
+      // flattens the Bezier on every call.
+      const path0 = edgeEls[i].g.querySelector(".edge-path");
+      let total0 = 0;
+      try { total0 = path0 ? path0.getTotalLength() : 0; } catch (_) { total0 = 0; }
+      particles.push({ edgeIdx: i, circle: c, path: path0, total: total0,
+                       t: Math.random(), speed: 0.10 + Math.random() * 0.06 });
     }
   }
   function stepParticles(ts) {
@@ -1454,10 +1474,16 @@
     lastTs = ts;
     for (const p of particles) {
       const eg = edgeEls[p.edgeIdx];
-      const path = eg && eg.g.querySelector(".edge-path");
+      let path = p.path;
+      // A re-render can replace the path element under us between rebuilds;
+      // recover once rather than dropping the particle for good.
+      if (!path || !path.isConnected) {
+        path = eg && eg.g.querySelector(".edge-path");
+        p.path = path;
+        try { p.total = path ? path.getTotalLength() : 0; } catch (_) { p.total = 0; }
+      }
       if (!path) { p.circle.style.opacity = 0; continue; }
-      let total = 0;
-      try { total = path.getTotalLength(); } catch (_) { total = 0; }
+      const total = p.total;
       if (!total) { p.circle.style.opacity = 0; continue; }
       p.t += p.speed * dt; if (p.t > 1) p.t -= 1;
       const pt = path.getPointAtLength(p.t * total);
