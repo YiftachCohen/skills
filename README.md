@@ -52,3 +52,7 @@ skill-name/
 `SKILL.md` is the file the agent reads when the skill triggers. `README.md`
 explains the skill for humans. `evals/` contains lightweight test prompts for
 future tuning.
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
