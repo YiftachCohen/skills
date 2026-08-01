@@ -162,6 +162,34 @@ DIR_FILE_CAP = 40
 def validate(data):
     errors, warnings = [], []
 
+    # --check is the mode that exists to diagnose a malformed map, so it must
+    # report the malformation rather than raise out of it. Everything below
+    # indexes into dicts and iterates lists; normalise once, here, and return
+    # early when the shape is too broken for the rest to mean anything.
+    if not isinstance(data, dict):
+        return [f"top level is {type(data).__name__}, expected a JSON object"], [], 0
+
+    graph = data.get("graph")
+    if graph is not None and not isinstance(graph, dict):
+        return [f"graph is {type(graph).__name__}, expected an object"], [], 0
+    graph = graph or {}
+
+    raw_nodes = graph.get("nodes") or []
+    raw_edges = graph.get("edges") or []
+    if not isinstance(raw_nodes, list):
+        return [f"graph.nodes is {type(raw_nodes).__name__}, expected a list"], [], 0
+    if not isinstance(raw_edges, list):
+        return [f"graph.edges is {type(raw_edges).__name__}, expected a list"], [], 0
+
+    nodes = [n for n in raw_nodes if isinstance(n, dict)]
+    edges = [e for e in raw_edges if isinstance(e, dict)]
+    for i, n in enumerate(raw_nodes):
+        if not isinstance(n, dict):
+            errors.append(f"nodes[{i}] is {type(n).__name__}, expected an object")
+    for i, e in enumerate(raw_edges):
+        if not isinstance(e, dict):
+            errors.append(f"edges[{i}] is {type(e).__name__}, expected an object")
+
     if data.get("version") not in (1, 2):
         warnings.append(f"version is {data.get('version')!r}, expected 1 or 2")
 
@@ -207,11 +235,17 @@ def validate(data):
                 f"project.slug {slug!r} does not match ^[a-z0-9-]{{1,48}}$"
             )
 
-    graph = data.get("graph") or {}
-    nodes = graph.get("nodes") or []
-    edges = graph.get("edges") or []
     if not nodes:
         errors.append("graph.nodes is empty — nothing to render")
+
+    # A non-string id makes `ids.count(i)` / `set(ids)` below raise
+    # `TypeError: unhashable type` for a list or dict id — report it as an
+    # error and drop the node from the id-keyed maps rather than crash.
+    for i, n in enumerate(nodes):
+        nid = n.get("id")
+        if nid is not None and not isinstance(nid, str):
+            errors.append(f"nodes[{i}] id {nid!r} is {type(nid).__name__}, expected a string")
+    nodes = [n for n in nodes if isinstance(n.get("id"), str) or n.get("id") is None]
 
     ids = [n.get("id") for n in nodes]
     dupes = {i for i in ids if ids.count(i) > 1}
@@ -242,6 +276,19 @@ def validate(data):
                 warnings.append(
                     f"node {n.get('id')!r} {field} is {len(val)} chars (cap {limit})"
                 )
+
+    # A non-string parent breaks `p not in id_set` and the Counter() below the
+    # same way a non-string id breaks ids.count()/set(ids) above — report it
+    # and treat the node as parentless (dropped from the parent maps) rather
+    # than crash.
+    for n in nodes:
+        p = n.get("parent")
+        if p is not None and not isinstance(p, str):
+            errors.append(
+                f"node {n.get('id')!r} parent {p!r} is {type(p).__name__}, "
+                "expected a string"
+            )
+            n["parent"] = None
 
     parents = {n.get("id"): n.get("parent") for n in nodes}
     for n in nodes:
