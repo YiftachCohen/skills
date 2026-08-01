@@ -157,6 +157,11 @@ EDGE_SOURCE_EXT = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".go", ".rb", ".
                    ".java", ".swift", ".kt", ".m", ".cs", ".php", ".sql", ".yml",
                    ".yaml", ".sh", ".html", ".jinja", ".j2", ".erb", ".vue", ".svelte"}
 DIR_FILE_CAP = 40
+# Directories that are never the subject of a map and routinely hold 100x more
+# files than the source does. Walking them to keep 40 files is the difference
+# between --edges taking a second and taking a minute on a monorepo.
+SKIP_DIRS = {"node_modules", ".git", ".venv", "venv", "dist", "build", ".next",
+             "vendor", "__pycache__", ".tox", "target", ".mypy_cache", ".pytest_cache"}
 
 
 def validate(data):
@@ -662,15 +667,25 @@ def edge_source(node, repo_root):
     scan was partial and reports those as inconclusive instead.
     """
     ref = (node.get("sourceRef") or "").partition(":")[0]
-    if not ref:
+    target = resolve_in_repo(repo_root, ref)
+    if target is None:
         return None, False
-    target = repo_root / ref
     files, truncated = [], False
     if target.is_file():
         files = [target]
     elif target.is_dir():
-        found = [f for f in sorted(target.rglob("*"))
-                 if f.is_file() and f.suffix in EDGE_SOURCE_EXT]
+        found = []
+        for dirpath, dirnames, filenames in os.walk(target):
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS
+                           and not d.startswith(".")]
+            for name in filenames:
+                if Path(name).suffix in EDGE_SOURCE_EXT:
+                    found.append(Path(dirpath) / name)
+            # One past the cap is enough to know the scan was partial, which is
+            # all the caller reports; keep walking no further.
+            if len(found) > DIR_FILE_CAP:
+                break
+        found.sort()
         truncated = len(found) > DIR_FILE_CAP
         files = found[:DIR_FILE_CAP]
     if not files:
