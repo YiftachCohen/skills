@@ -1,0 +1,24 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Unit tests
+        run: python3 -m unittest discover atlas/tests -v
+      - name: Examples validate
+        run: |
+          python3 atlas/scripts/render.py atlas/examples/demo.json --check
+          python3 atlas/scripts/render.py atlas/examples/demo-v1.json --check
+          # TODO(plan 005): add --strict once demo.json is clean
+      - name: Render is well-formed
+        run: python3 atlas/scripts/render.py atlas/examples/demo.json -o /tmp/out.html
+      - name: Viewer JS syntax
+        run: node --check atlas/templates/viewer.js
