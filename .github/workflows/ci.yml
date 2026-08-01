@@ -15,9 +15,8 @@ jobs:
         run: python3 -m unittest discover atlas/tests -v
       - name: Examples validate
         run: |
-          python3 atlas/scripts/render.py atlas/examples/demo.json --check
+          python3 atlas/scripts/render.py atlas/examples/demo.json --check --strict
           python3 atlas/scripts/render.py atlas/examples/demo-v1.json --check
-          # TODO(plan 005): add --strict once demo.json is clean
       - name: Render is well-formed
         run: python3 atlas/scripts/render.py atlas/examples/demo.json -o /tmp/out.html
       - name: Viewer JS syntax

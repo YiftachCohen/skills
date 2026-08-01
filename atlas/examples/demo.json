@@ -5,7 +5,8 @@
     "slug": "acme-support",
     "tagline": "AI support desk with research, billing, and nightly evals",
     "iconDomain": "vercel.com",
-    "date": "2026-07-27"
+    "date": "2026-07-27",
+    "rules": 3
   },
   "graph": {
     "nodes": [
@@ -40,7 +41,8 @@
         "kind": "entry",
         "parent": "admin",
         "sub": "/admin/users",
-        "sourceRef": "src/app/admin/users"
+        "sourceRef": "src/app/admin/users",
+        "detail": "Suspend or reinstate a workspace's user accounts and reset their MFA."
       },
       {
         "id": "admin-billing",
@@ -48,7 +50,8 @@
         "kind": "entry",
         "parent": "admin",
         "sub": "/admin/billing",
-        "sourceRef": "src/app/admin/billing"
+        "sourceRef": "src/app/admin/billing",
+        "detail": "Manually adjust a workspace's plan or credit balance outside the normal billing flow."
       },
       {
         "id": "research",
@@ -74,7 +77,8 @@
         "kind": "agent",
         "sub": "LLM-as-judge",
         "group": "Agents",
-        "sourceRef": "src/evals/judge.ts"
+        "sourceRef": "src/evals/judge.ts",
+        "detail": "Scores each day's support and research transcripts against a rubric and flags regressions."
       },
       {
         "id": "billing",
@@ -90,7 +94,8 @@
         "kind": "service",
         "parent": "billing",
         "sub": "tiers, limits",
-        "sourceRef": "src/services/billing/plans.ts"
+        "sourceRef": "src/services/billing/plans.ts",
+        "detail": "Tracks each workspace's plan tier and enforces its seat and usage quotas."
       },
       {
         "id": "billing-invoices",
@@ -98,7 +103,8 @@
         "kind": "service",
         "parent": "billing",
         "sub": "monthly runs",
-        "sourceRef": "src/services/billing/invoices.ts"
+        "sourceRef": "src/services/billing/invoices.ts",
+        "detail": "Runs the monthly billing cycle and generates invoices for every active workspace."
       },
       {
         "id": "billing-webhook",
@@ -106,7 +112,8 @@
         "kind": "entry",
         "parent": "billing",
         "sub": "/webhooks/stripe",
-        "sourceRef": "src/services/billing/webhook.ts"
+        "sourceRef": "src/services/billing/webhook.ts",
+        "detail": "Receives Stripe events and reconciles subscription and payment state in Postgres."
       },
       {
         "id": "gpt",
@@ -137,7 +144,8 @@
         "label": "Postgres",
         "kind": "store",
         "sub": "answers, scores",
-        "domain": "postgresql.org"
+        "domain": "postgresql.org",
+        "detail": "Stores support answers, eval scores, and billing plan and invoice records."
       },
       {
         "id": "resend",
