@@ -1440,6 +1440,10 @@
     return "var(--accent)";                          // calls / triggers / default
   }
   function rebuildParticles() {
+    // The guided tour calls this once per hop without clearing the SVG first,
+    // so without this the old layer never leaves — dead dots piling up under
+    // the live ones.
+    if (particlesG && particlesG.parentNode) particlesG.parentNode.removeChild(particlesG);
     particles = [];
     particlesG = document.createElementNS(SVGNS_, "g");
     particlesG.setAttribute("id", "particles");
