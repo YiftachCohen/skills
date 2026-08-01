@@ -104,16 +104,22 @@ are fixed, and the CLI prints everything you need.
   },
   "graph": {
     "nodes": [
-      { "id": "chat", "label": "Dashboard chat", "kind": "entry", "sub": "/api/chat" },
+      { "id": "chat", "label": "Dashboard chat", "kind": "entry", "sub": "/api/chat",
+        "sourceRef": "src/app/api/chat/route.ts:18",
+        "detail": "Streams support answers to the dashboard; the only authenticated chat entry point" },
       { "id": "agent", "label": "Support agent", "kind": "agent", "sub": "streamText",
         "sourceRef": "src/agents/support.ts:42",
-        "detail": "Answers tickets with order lookups (<=200, optional)" },
+        "detail": "Answers tickets with order lookups against Postgres, streaming replies back to chat" },
       { "id": "gpt4o", "label": "GPT-4o", "kind": "model", "domain": "openai.com" },
       { "id": "billing", "label": "Billing service", "kind": "service",
-        "sourceRef": "src/services/billing.ts" },
+        "sourceRef": "src/services/billing.ts",
+        "detail": "Owns plan changes and invoice generation for every paid workspace" },
       { "id": "billing-plans", "label": "Plans & quotas", "kind": "service",
-        "parent": "billing", "sourceRef": "src/services/billing/plans.ts" },
-      { "id": "pg", "label": "Postgres", "kind": "store", "domain": "postgresql.org" }
+        "parent": "billing", "sourceRef": "src/services/billing/plans.ts",
+        "detail": "Tracks each workspace's plan tier and enforces its seat and usage quotas" },
+      { "id": "pg", "label": "Postgres", "kind": "store", "domain": "postgresql.org",
+        "sourceRef": "src/db/schema.sql",
+        "detail": "Primary datastore for billing records, plans and support ticket history" }
     ],
     "edges": [
       { "from": "chat", "to": "agent", "kind": "triggers" },
