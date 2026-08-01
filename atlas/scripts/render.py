@@ -55,6 +55,10 @@ NODE_KINDS = {"entry", "cron", "agent", "model", "tool", "service", "store", "ex
 EDGE_KINDS = {"calls", "reads", "writes", "triggers", "enqueues"}
 THEMES = ("living", "print", "terrain")
 SLUG_RE = re.compile(r"^[a-z0-9-]{1,48}$")
+# The viewer keys edge ports on the node id, so an id carrying the key's own
+# separator loses its edges silently — the cards draw and every arrow vanishes.
+# Cheaper to refuse the id than to make every consumer defensive.
+NODE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
 # Graph-size ceilings. The legacy topModels/topTools/topIntegrations summary
 # fields are ignored by the viewer and must not be written any more, so there is
@@ -218,6 +222,13 @@ def validate(data):
     for i, n in enumerate(nodes):
         if not n.get("id"):
             errors.append(f"nodes[{i}] has no id")
+        nid = n.get("id")
+        if isinstance(nid, str) and nid and not NODE_ID_RE.match(nid):
+            errors.append(
+                f"node {nid!r} has an id outside [A-Za-z0-9_.-] (max 64) — ids key "
+                "the viewer's edge ports, and a ':' or a space there drops every "
+                "edge on the node while the card still draws"
+            )
         if not n.get("label"):
             warnings.append(f"node {n.get('id')!r} has no label")
         if n.get("kind") not in NODE_KINDS:
