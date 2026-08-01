@@ -1060,6 +1060,9 @@ def main():
     ap.add_argument("-o", "--out", help="output HTML path (default: alongside atlas.json)")
     ap.add_argument("--open", action="store_true", help="open the result in the default browser")
     ap.add_argument("--check", action="store_true", help="validate only, write nothing")
+    ap.add_argument("--strict", action="store_true",
+                    help="exit 1 if anything warned, not just on errors — "
+                         "what SKILL.md means by 'clean'")
     ap.add_argument("--theme", choices=THEMES, default="living",
                     help="visual theme (default: living)")
     ap.add_argument("--online-icons", action="store_true",
@@ -1168,9 +1171,16 @@ def main():
                 print(f"  {nid}  {claim}", file=sys.stderr)
         if inv_note:
             print(inv_note, file=sys.stderr)
+        warn_note = (f" — {len(warnings)} warning(s); not clean until 0"
+                     if warnings else "")
         print(f"{atlas_path} is valid "
               f"({top_level_count} top-level of {len(data['graph']['nodes'])} nodes, "
-              f"{len(data['graph'].get('edges', []))} edges{source_note})")
+              f"{len(data['graph'].get('edges', []))} edges{source_note}){warn_note}")
+        # Warnings are the whole quality bar for a map — SKILL.md tells the
+        # agent to re-run until it is clean, and without this a check that
+        # always exits 0 cannot gate anything on that.
+        if args.strict and warnings:
+            sys.exit(1)
         return
 
     template = load_template()
@@ -1192,6 +1202,10 @@ def main():
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html)
     print(f"wrote {out_path}")
+    # Same gate as the --check path above: a rendered map with open warnings
+    # is not "clean" by SKILL.md's definition either, so --strict applies here too.
+    if args.strict and warnings:
+        sys.exit(1)
 
     if args.open:
         if sys.platform == "win32":
