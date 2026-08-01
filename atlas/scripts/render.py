@@ -545,7 +545,7 @@ def describe_ref(ref, repo_root):
         lines = target.read_text(errors="replace").splitlines()
     except OSError:
         return None
-    if int(line) > max(len(lines), 1):
+    if not lines or int(line) > len(lines):
         return f"points past the end of the file ({len(lines)} lines)"
     what = describe_weak_line(lines[int(line) - 1]) if int(line) >= 1 else None
     return f"lands on {what} line — point at the call itself" if what else None
@@ -580,7 +580,7 @@ def check_source_refs(nodes, repo_root):
             except OSError:
                 lines = None
             if lines is not None:
-                if int(line) > max(len(lines), 1):
+                if not lines or int(line) > len(lines):
                     warnings.append(
                         f"node {n.get('id')!r} sourceRef {ref!r} points past the end of "
                         f"the file ({len(lines)} lines)"
