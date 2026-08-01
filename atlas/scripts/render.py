@@ -594,7 +594,14 @@ def check_source_refs(nodes, repo_root):
             continue
         checked += 1
         rel, _, line = ref.partition(":")
-        target = repo_root / rel
+        target = resolve_in_repo(repo_root, rel)
+        if target is None:
+            warnings.append(
+                f"node {n.get('id')!r} sourceRef {ref!r} is not a path inside the repo "
+                "— sourceRef is repo-relative; an absolute path or one with '..' "
+                "points somewhere the map's reader does not have"
+            )
+            continue
         if not target.exists():
             warnings.append(
                 f"node {n.get('id')!r} sourceRef {ref!r} does not exist in {repo_root} "
