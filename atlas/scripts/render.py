@@ -483,6 +483,33 @@ def infer_repo_root(atlas_path):
     return p.parent.parent if p.parent.name == ".atlas" else None
 
 
+def resolve_in_repo(repo_root, rel):
+    """The path `rel` names inside `repo_root`, or None if it escapes.
+
+    `sourceRef` is defined as a repo-relative path (SKILL.md), but an atlas is
+    a file people send each other, so the contract has to be enforced rather
+    than assumed: `Path("/repo") / "/etc/passwd"` is `/etc/passwd`, because a
+    plain join drops the root as soon as the right-hand side is absolute, and
+    `..` segments walk out just as easily. Every read below reports what it
+    found — whether a path exists, how many lines it has, whether a given line
+    is code or a comment — so an unconfined ref turns those warnings into a
+    read oracle over anything the invoking user can open.
+    """
+    if not rel:
+        return None
+    candidate = Path(rel)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        return None
+    try:
+        target = (repo_root / candidate).resolve()
+    except OSError:
+        return None
+    root = repo_root.resolve()
+    # `is_relative_to` is 3.9+; this form works on the 3.8 floor the CI matrix
+    # pins, and treats the root itself as inside.
+    return target if target == root or root in target.parents else None
+
+
 def describe_weak_line(text):
     """Name why a line is a poor landing spot, or None if it's a real landmark.
 
