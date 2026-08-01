@@ -259,10 +259,12 @@ ref is only ever meant to point inside the repo it describes.
 
 ## Coverage — the map must account for everything
 
-Before writing the map, assemble `.atlas/inventory.md` from manifests and greps:
-`references/coverage-checklist.md` has the commands and the categories. Keeping
-the list in your head is how a scheduled job or a whole flag-driven mode goes
-missing without anything registering that it did.
+Before writing the map, assemble `.atlas/inventory.md` from `.atlas/survey.txt`,
+which the survey already wrote. `references/coverage-checklist.md` covers the
+part no sweep reaches — flag-unlocked modes, the machine-facing contract,
+dev-time AI — and how to read the largest-files list. Keeping the list in your
+head is how a scheduled job or a whole flag-driven mode goes missing without
+anything registering that it did.
 
 Reconcile every line: each item appears in the map — as a node, a child, or
 named in a node's `sub`/`detail` ("+ Google Maps geocoding") — or is omitted in
@@ -393,6 +395,26 @@ count. Give the job to a subagent and tell it to **refute**, with instructions t
 default to "refuted" when the evidence is ambiguous — asked to *check* the same
 claims, an agent confirms them.
 
+This is the highest-value spend in the skill and the one to protect when you are
+trimming cost. Across two measured runs it caught 11 wrong sentences of ~37 and
+8 of 20 — in both cases with every automated check already green, and in both
+cases including a sentence that asserted the opposite of the code.
+
+**Batch the claims: one agent, 15–20 numbered claims.** This is where the saving
+is, and it is worth knowing why, because the intuitive answer is wrong. The
+dominant cost is the agent orienting itself in the repo, which is paid *per
+agent*, not per claim — so two agents cost roughly twice one, whatever you ask
+them. Measured per claim, the batched run was slightly *more* expensive
+(6.1k → 6.9k), on a repo with twice the files; the 39% saving came from going
+from two agents to one, not from asking for less.
+
+**Ask for refutations only** — "return only the claims you are refuting or
+downgrading, with the `path:line` and what the code actually does". A verdict
+table that spells out every CONFIRMED row bills you for the sentences that were
+already fine and buries the eight that matter in twelve that don't. Expect this
+to buy clarity rather than a large number of tokens: the agent still reads the
+whole repo either way.
+
 Six shapes recur, all of them honest mistakes:
 
 - **A sentence scoped to the file you read, stated about the repo.** "Hardcodes
@@ -412,9 +434,15 @@ Six shapes recur, all of them honest mistakes:
   described as failing open when billing was off; two of its five members abort
   403 in exactly that case. Read every member before writing one sentence about
   all of them, or name the member you read.
-- **A count from an impression.** 8 of 32 counts in one map were wrong. A count
-  is a claim: run the command that produces it and paste that number.
-  `--check` lists the counted claims as a worklist for exactly this.
+- **A count from an impression — or from a subagent's prose.** 8 of 32 counts in
+  one map were wrong. A count is a claim: **run the command yourself, in the
+  main loop, and paste that number.** A number that arrives inside a
+  subagent's report is an impression wearing a digit, however well cited the
+  rest of that report is — one 70k-token investigation returned "10 call sites"
+  for a masking function that has 26 across 8 files, and a one-second
+  `grep -c` settled it. Delegating the reading is right; delegating the counting
+  is how the wrong number gets authority. `--check` lists every counted claim as
+  a worklist for exactly this.
 - **A dependency claim made from the manifest alone.** A package "pinned in
   pyproject and unused" was in fact a `[tool.uv] override-dependencies` entry —
   not a dependency at all — and the lockfile showed it installed by default
@@ -434,16 +462,28 @@ more than "every job is flag-gated", and it is the sentence that survives.
 Measure first, because file trees lie. Vendored directories (`node_modules`,
 `.venv`, `vendor`, `dist`, `.next`, `build`) routinely outnumber real source
 50:1, and the user's own description ("it's a big python repo") is a guess too.
-Count only what you would actually read:
+One command does the measuring and the whole coverage sweep at once:
 
 ```bash
-git ls-files | grep -E '\.(ts|tsx|js|jsx|py|go|rb|rs|java|swift|kt|m|cs|php)$' \
-  | grep -vE '(^|/)(tests?|__tests__|spec|fixtures|locales)/|\.(test|spec)\.' | wc -l
+bash /abs/path/to/skill/scripts/survey.sh /abs/repo
 ```
 
-(or `find` with vendored directories pruned, if it isn't a git repo). Excluding
-tests and fixtures matters, and so does keeping `.swift`/`.kt`/`.m`/`.cs` in — a
-mobile repo whose native half you never counted is a system you never saw.
+It prints to stdout and saves a copy to `<repo>/.atlas/survey.txt`, creating
+`.atlas/` itself — don't add a `>` redirect, which fails in the shell before the
+script runs on the first scan of any repo.
+
+It prints the measured file count, the largest-files list, manifests, env vars,
+scheduled work, entry points, schemas, exit codes and the AI layer — every
+category `references/coverage-checklist.md` describes, in about 2k tokens for a
+mid-size repo. Run it **once**, before anything else, and paste the relevant
+slice into each subagent prompt: a metric re-derived per agent is paid for per
+agent, and three agents independently running `wc -l` is the cheapest waste to
+delete. Excluding tests matters and is easy to get wrong — `_test.go` and
+`test_x.py` are not caught by a directory-name filter, and leaving them in
+doubles the measured size of a Go or Python repo and floods the largest-files
+list. Keeping `.swift`/`.kt`/`.m`/`.cs` in matters too: a mobile repo whose
+native half you never counted is a system you never saw.
+
 Branch on the measured number, not the impression:
 
 | files | approach |
@@ -454,7 +494,18 @@ Branch on the measured number, not the impression:
 
 Work command-first at every size: directory listings for structure, grep for
 locations, and open only the files that define agents, tools, services and
-schemas — manifests and grep hits answer most of the map.
+schemas — the survey and a few greps answer most of the map.
+
+**If you delegate to subagents, paste `references/slice-prompt.md` — at any
+size.** The size table picks how much reading the map needs, not how to ask for
+it. Skipping the slice prompt because a repo sat in the 20–500 band is the most
+expensive mistake this skill has made: six hand-rolled prompts over a 138-file
+Go repo asked for package tours, got prose reports back, and spent 651k
+subagent tokens on a map that used under a fifth of it. Prose is the cost — ask
+for what a node needs (`id`/`kind`/`sourceRef`/`detail`), not what a package
+contains, and an agent cannot bill you for an essay.
+
+Then, within each slice:
 
 - **Main flows first**: entry points (routes, webhooks, pages, CLIs), jobs
   (crons/queues/workers — all of them `cron`), and the stores/services they read

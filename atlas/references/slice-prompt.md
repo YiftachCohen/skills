@@ -7,6 +7,17 @@ verbatim, then add the four slice-specific parts marked `<< >>`.
 Written out once here because typing it per slice is where the fan-out cost
 goes — one five-slice run spent most of its prompt budget re-deriving this.
 
+**Use it whenever you delegate, at any repo size.** It lives next to
+`large-repos.md` for historical reasons, not because it only applies there. A
+140-file Go repo mapped with six hand-rolled prose prompts cost 651k subagent
+tokens and yielded a map that used under a fifth of what came back; the same
+slices asked for the JSON below would have returned something pasteable. The
+return format *is* the saving — an agent that cannot write an essay does not
+bill you for one.
+
+Paste the relevant part of `.atlas/survey.txt` into the slice scope rather than
+letting each agent re-derive file counts, largest files and env vars.
+
 ---
 
 You are mapping ONE SLICE of the repo at `<<ABS PATH>>`. All `sourceRef` paths
@@ -87,18 +98,32 @@ team says out loud).
   line. If that line is in another file, the edge belongs to that file's node.
 - Budget: at most `<<N>>` top-level nodes AND `<<M>>` nodes in total. Merge
   near-identical things and say so in `sub` rather than enumerating them.
+- **Every number you write must carry the command that produced it.** If a
+  `sub` or `detail` says "13 editors" or "42 patterns", add an entry to
+  `counts` giving the exact shell command whose output is that number. Do not
+  write a number you did not run a command for — say "several" instead, or
+  leave it out. Counts asserted from reading are the single most common wrong
+  claim in a finished map, and yours will be re-run before it ships.
 
 ## SHARED IDS — use these EXACT ids; do not invent variants
 << the pre-agreed list, with kinds. Say which ones this slice DEFINES and which
 it only references as edge endpoints. >>
 
 ## RETURN FORMAT
-Return ONLY a JSON object — no prose, no file excerpts, no markdown fence:
+Return ONLY a JSON object — no prose, no summary, no file excerpts, no preamble,
+no markdown fence. A report is not the deliverable; this is:
 
 ```
-{"nodes":[...],"edges":[...],"inventory":["- `path/x.py` — node `some-id`","- `path/y.py` — omitted: <one reason>"]}
+{"nodes":[...],"edges":[...],
+ "inventory":["- `path/x.py` — node `some-id`","- `path/y.py` — omitted: <one reason>"],
+ "counts":[{"claim":"13 editors","command":"grep -c '{' internal/install/editors.go"}],
+ "uncertain":["one line per thing you could not resolve"]}
 ```
 
 `inventory` is one line per real item in your slice, each ending in a
 disposition that names the node id in backticks or says "omitted: <reason>". A
 healthy omitted count is correct, not a failure.
+
+`uncertain` is where anything you would have written a paragraph about goes —
+one line each. It is cheaper for both of us than a report, and it is the only
+place prose belongs.
