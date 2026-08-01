@@ -223,12 +223,17 @@ def validate(data):
                 "Do NOT take the incremental path: re-derive the kinds with a "
                 "clean scan, then set project.rules. See CHANGELOG.md"
             )
-        elif isinstance(seen_rules, int) and seen_rules < cur:
+        elif isinstance(seen_rules, int) and seen_rules != cur:
+            direction = ("was authored against older rules and the incremental path "
+                         "would carry them forward"
+                         if seen_rules < cur else
+                         "was authored against NEWER rules than this copy of the "
+                         "skill — update the skill rather than the map")
             warnings.append(
                 f"project.rules is {seen_rules}, this skill is ruleset {cur} — the "
-                "map was authored against older rules and the incremental path "
-                f"would carry them forward. Read CHANGELOG.md for what changed "
-                f"between {seen_rules} and {cur}, then re-scan what it affects"
+                f"map {direction}. Read CHANGELOG.md for what changed between "
+                f"{min(seen_rules, cur)} and {max(seen_rules, cur)}, then re-scan "
+                "what it affects"
             )
         elif not isinstance(seen_rules, int):
             warnings.append(f"project.rules is {seen_rules!r}, expected an integer")
@@ -1336,11 +1341,13 @@ def main():
                 print(f"  {nid}  {claim}", file=sys.stderr)
         if inv_note:
             print(inv_note, file=sys.stderr)
+        ruleset = current_ruleset()
+        rules_note = f", ruleset {ruleset}" if ruleset is not None else ""
         warn_note = (f" — {len(warnings)} warning(s); not clean until 0"
                      if warnings else "")
         print(f"{atlas_path} is valid "
               f"({top_level_count} top-level of {node_count} nodes, "
-              f"{edge_count} edges{source_note}){warn_note}")
+              f"{edge_count} edges{source_note}{rules_note}){warn_note}")
         # Warnings are the whole quality bar for a map — SKILL.md tells the
         # agent to re-run until it is clean, and without this a check that
         # always exits 0 cannot gate anything on that.
