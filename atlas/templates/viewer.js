@@ -14,7 +14,25 @@
   // The rendered config is the default; a stored value exists only once the
   // user has actually touched that control, so `--theme print` still holds for
   // a fresh embed. Writes happen on explicit toggles only.
-  const PREF_KEY = "atlas:prefs:" + ((DATA.project || {}).name || "untitled");
+  //
+  // All local files share one file:// origin, so the key is the only thing
+  // separating one map's settings from another's. project.name is free text and
+  // collides trivially ("api", or the "untitled" fallback), which would let a
+  // map you were merely sent inherit your Icons setting and start fetching
+  // favicons for its own third-party nodes. Fingerprint the graph instead.
+  function mapFingerprint(data) {
+    const s = JSON.stringify(data && data.graph || {});
+    let h1 = 0x811c9dc5, h2 = 0x01000193;
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      h1 = (h1 ^ c) * 16777619 >>> 0;
+      h2 = (h2 + c * (i + 1)) >>> 0;
+    }
+    return h1.toString(36) + "-" + h2.toString(36);
+  }
+  // Two accumulators because a single 32-bit FNV over a large graph collides
+  // more than is comfortable for something that gates network requests.
+  const PREF_KEY = "atlas:prefs:" + mapFingerprint(DATA);
   let PREFS = {};
   try { PREFS = JSON.parse(localStorage.getItem(PREF_KEY) || "{}") || {}; } catch (_) { PREFS = {}; }
   function savePref(key, value) {
@@ -97,6 +115,11 @@
   // google.com; flipping it back off rebuilds the letter tiles. The choice is
   // remembered FOR THIS MAP ONLY (see PREF_KEY) — a different atlas still opens
   // offline until it is switched on there too.
+  // Icons is the only preference that causes a network request, so reading it
+  // from PREFS must never cross maps. That used to depend on project.name
+  // (free text, collides) staying unique; now PREF_KEY *is* the graph's
+  // fingerprint, so a PREFS hit is only ever possible for this exact graph —
+  // reading it back here is safe without any further guard.
   let onlineIcons = "icons" in PREFS ? !!PREFS.icons : !!CONFIG.onlineIcons;
   const iconSlots = [];
   function buildIconNode(slot) {
