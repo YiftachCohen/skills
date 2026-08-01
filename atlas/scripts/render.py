@@ -558,7 +558,9 @@ def describe_ref(ref, repo_root):
     number and the line's substance are all checked before the edge is excused.
     """
     rel, _, line = ref.partition(":")
-    target = repo_root / rel
+    target = resolve_in_repo(repo_root, rel)
+    if target is None:
+        return "is not a path inside the repo — evidence is a repo-relative call site"
     if not target.exists():
         return f"does not exist in {repo_root}"
     if not line:
