@@ -254,6 +254,58 @@
   }
   const isContainer = id => childrenOf.has(id);
   const rawEdges = (DATA.graph?.edges || []).filter(e => byId.has(e.from) && byId.has(e.to));
+  const topAncestor = id => {
+    let n = byId.get(id);
+    while (n && n.parent) n = byId.get(n.parent);
+    return n ? n.id : id;
+  };
+
+  // ---------- root-ness: which node the graph says is the origin ----------
+  // The Entry points lane answers "where do I start reading", and until now it
+  // answered by kind then alphabetically — so the first box was whichever entry
+  // sorted first by id, and every `cron` sat after every `entry` however much of
+  // the system it drove. Root-ness is what "point 0" actually means: nothing in
+  // the map calls it. Ties break on how much of the map a node opens up, so the
+  // widest door leads and a nightly job is placed by its reach rather than by
+  // its kind.
+  //
+  // Computed once over the whole graph with every container collapsed, NOT per
+  // render over the drawn graph. Being the origin is a property of the system,
+  // not of the current view, and the reader's anchor should not reshuffle
+  // because they expanded something three columns away. Collapsing to the
+  // top-level ancestor also matches what the opening view draws: an edge into a
+  // child is an arrow into the container's card, so the container is called.
+  //
+  // Ghosts count for neither: a doc's claim cannot make a node reachable, and
+  // it cannot stop one being an origin. Same rule as tracing and blast radius.
+  const ENTRY_RANK = (() => {
+    const out = new Map(), called = new Set();
+    for (const e of rawEdges) {
+      if (e.ghost) continue;
+      const from = topAncestor(e.from), to = topAncestor(e.to);
+      if (from === to) continue;
+      if (!out.has(from)) out.set(from, new Set());
+      out.get(from).add(to);
+      called.add(to);
+    }
+    const reachFrom = id => {
+      const seen = new Set(), stack = [id];
+      while (stack.length) {
+        for (const next of out.get(stack.pop()) || []) {
+          if (next !== id && !seen.has(next)) { seen.add(next); stack.push(next); }
+        }
+      }
+      return seen.size;
+    };
+    const ranks = new Map();
+    for (const n of allNodes) {
+      if (n.parent) continue;
+      ranks.set(n.id, { root: called.has(n.id) ? 1 : 0, reach: reachFrom(n.id) });
+    }
+    return ranks;
+  })();
+  const UNRANKED = { root: 1, reach: 0 };
+  const entryRank = n => ENTRY_RANK.get(topAncestor(n.id)) || UNRANKED;
 
   // Authored tours, filtered to what this graph can actually play: a step
   // naming a node that isn't here would strand the camera mid-story.
@@ -519,6 +571,19 @@
         layer.sort((a, b) => {
           const ga = layoutGroup(a), gb = layoutGroup(b);
           if (ga && ga === gb) return 0;
+          // Lane 0 orders by root-ness instead of by kind — see ENTRY_RANK.
+          // Kind is the right primary key everywhere else (crons together,
+          // stores before externals), but this lane holds only two kinds and
+          // grouping them only ever means "every cron last", which is the thing
+          // being fixed. Barycenter still breaks ties, so a job that shares its
+          // trigger's neighbourhood still lands near it.
+          if (r === ENTRY_LANE) {
+            const ra = entryRank(a), rb = entryRank(b);
+            return ra.root - rb.root
+              || rb.reach - ra.reach
+              || bary(a) - bary(b)
+              || String(a.id).localeCompare(String(b.id));
+          }
           return repKindIdx(a) - repKindIdx(b)
             || bary(a) - bary(b)
             || String(a.id).localeCompare(String(b.id));

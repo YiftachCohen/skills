@@ -110,3 +110,14 @@ their node), an "Ask agent…" button that turns any node or flow into a copyabl
 context-loaded prompt, and theme/motion/icon toggles remembered per map across
 reloads. Share the HTML by sending the file, hosting it, or committing it — zero
 network requests unless icons are switched on.
+
+Layout is by semantic lane — entry/cron, then service/agent, then model/tool,
+then store/external, left to right — with kinds grouped and barycenter ordering
+inside each lane. Two carve-outs, both for lane 0, because that lane answers
+"where do I start reading": a user `group` never drags an `entry` or `cron` out
+of it (the node detaches from the group's box and keeps its lane), and the lane
+is ordered by root-ness — nodes with no inbound edge first, then by how many
+nodes each reaches — instead of by kind. Root-ness is computed once over the
+whole graph with every container collapsed, so expanding something elsewhere
+never reshuffles the reader's anchor, and ghost edges count for neither
+direction. A lane taller than seven cards wraps into sub-columns.
