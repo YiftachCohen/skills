@@ -83,6 +83,7 @@
     <div class="sc"><b>kind pill</b><span>filter the map to one kind</span></div>
     <h4>Keys</h4>
     <div class="sc"><b>M</b><span>show / hide the minimap</span></div>
+    <div class="sc"><b>← →</b><span>drive a narrated tour by hand</span></div>
     <div class="sc"><b>Esc</b><span>step back one level</span></div>
   </div>
 
@@ -106,6 +107,21 @@
     <button id="blast-flip" type="button"></button>
     <button id="blast-exit" type="button" aria-label="Exit blast radius">✕</button>
   </div>
+
+  <div id="storycard" role="status" aria-live="polite" hidden>
+    <div class="story-head">
+      <span id="story-title"></span>
+      <span id="story-count"></span>
+    </div>
+    <p id="story-text"></p>
+    <div class="story-nav">
+      <button id="story-prev" type="button" aria-label="Previous stop">‹</button>
+      <button id="story-next" type="button" aria-label="Next stop">›</button>
+      <button id="story-stop" type="button" aria-label="Stop story">✕</button>
+    </div>
+  </div>
+
+  <div id="tourmenu" role="menu" aria-label="Narrated tours" hidden></div>
 
   <div id="promptsheet" role="dialog" aria-modal="false" aria-labelledby="ps-title" hidden>
     <button class="ps-close" aria-label="Close">×</button>

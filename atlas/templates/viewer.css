@@ -456,6 +456,64 @@
   #blastbar #blast-exit { padding: 4px 8px; color: var(--faint); border-color: transparent; background: none; }
   #blastbar #blast-exit:hover { color: var(--text); }
 
+  /* ---------- story mode: the caption card and the tour menu ----------
+     The card is the narration, so it gets the display face at reading size —
+     this is the one piece of chrome a reader actually reads a sentence in. */
+  #storycard {
+    position: fixed; z-index: 21; bottom: 64px; left: 50%; transform: translateX(-50%);
+    width: min(560px, calc(100vw - 48px));
+    background: var(--panel-glass); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 16px 12px; box-shadow: var(--shadow);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  }
+  #storycard[hidden] { display: none; }
+  #storycard .story-head { display: flex; align-items: baseline; gap: 10px; }
+  #story-title {
+    font: 600 9.5px/1.4 var(--font-mono); text-transform: uppercase;
+    letter-spacing: .14em; color: var(--accent);
+  }
+  #story-count { margin-left: auto; font: 500 10px/1.4 var(--font-mono); color: var(--faint); }
+  #story-text {
+    margin: 7px 0 0; padding-right: 84px; min-height: 2.6em;
+    font: 400 14px/1.5 var(--font-display); color: var(--text);
+  }
+  #storycard .story-nav { position: absolute; right: 12px; bottom: 11px; display: flex; gap: 4px; }
+  #storycard .story-nav button {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 5px;
+    color: var(--text); width: 26px; height: 24px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 13px;
+  }
+  #storycard .story-nav button:hover { border-color: var(--accent); color: var(--accent); }
+  #storycard .story-nav button:disabled { opacity: .35; cursor: default; }
+  #storycard .story-nav button:disabled:hover { border-color: var(--border); color: var(--text); }
+  #tourmenu {
+    position: fixed; z-index: 21; bottom: 60px; left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; width: 264px; padding: 5px;
+    background: var(--panel-glass); border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: var(--shadow);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  }
+  #tourmenu[hidden] { display: none; }
+  #tourmenu button {
+    display: flex; align-items: baseline; gap: 8px; text-align: left;
+    background: none; border: 0; border-radius: 5px; cursor: pointer;
+    color: var(--text); padding: 7px 9px; font-family: inherit;
+  }
+  #tourmenu button:hover { background: var(--btn-hover); }
+  #tourmenu button b { font: 600 12.5px/1.3 var(--font-display); }
+  #tourmenu button span {
+    margin-left: auto; font: 400 10px/1.4 var(--font-mono);
+    color: var(--faint); white-space: nowrap;
+  }
+  /* the auto tour is the fallback, so it sits below a rule and reads quieter */
+  #tourmenu button.auto {
+    border-top: 1px solid var(--border); border-radius: 0 0 5px 5px;
+    margin-top: 4px; padding-top: 9px;
+  }
+  #tourmenu button.auto b { font-weight: 500; color: var(--muted); }
+  :root[data-theme="terrain"] :is(#storycard, #tourmenu, #storycard .story-nav button,
+                                  #tourmenu button) { border-radius: 0; }
+
   /* ---------- flow particles ---------- */
   #particles { pointer-events: none; }
   .particle { opacity: 0; transition: opacity .3s; }
@@ -611,5 +669,6 @@
      print block would lose the cascade. The title block is the drafting
      caption for the printed sheet and stays. */
   @media print {
-    .toolbar, #shortcuts, #detail, #promptsheet, #blastbar { display: none !important; }
+    .toolbar, #shortcuts, #detail, #promptsheet, #blastbar,
+    #storycard, #tourmenu { display: none !important; }
   }

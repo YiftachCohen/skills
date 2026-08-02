@@ -26,9 +26,18 @@ don't invalidate an existing map.
 ## Unreleased — checks, not rules
 
 No ruleset bump: nothing here changes what a field means, so no existing map
-needs re-deriving. That includes ghost edges — a map with none is not wrong,
-only silent about a claim it was previously told to discard.
+needs re-deriving. That includes ghost edges and tours — both are additive and
+optional, and a map with neither is not wrong, only quieter.
 
+- **Narrated tours.** An optional top-level `tours` array — authored stories
+  over the main flows, played by the viewer with a gliding camera, a caption
+  card, progressive path lighting and arrow-key control. Optional on purpose: a
+  map without tours is complete, not deficient, and no existing map is worse
+  for lacking them. `--check` warns on **teleports** (consecutive stops must
+  follow real edges from any earlier stop, so forks are fine), on stops with no
+  sentence, and on a story that has grown into a lecture. The teleport warning
+  is deliberately ambiguous about blame: a hop with no edge means either the
+  story invented it or the map is missing the edge.
 - **Ghost edges.** `ghost: true` plus `claimedBy: "README.md:31"` records a
   doc-claimed arrow the code does not implement — the "arrows out of a diagram"
   case, which the rules previously told you to drop on the floor. Drawn dashed

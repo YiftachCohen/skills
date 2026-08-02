@@ -25,7 +25,9 @@ HTML file on disk.
 4. **Write the map** to `.atlas/atlas.json` in the contract shape below,
    reconciling it against every inventory line. Leave the repo's `.gitignore`
    alone — whether the map gets committed is the user's call; note in your
-   summary that `.atlas/` is untracked so they can decide deliberately.
+   summary that `.atlas/` is untracked so they can decide deliberately. Write
+   any `tours` last, once the edges are settled — a tour is prose over the
+   graph, so the graph has to be right first.
 5. **Check it**, and fix what comes back. Instant, writes nothing:
    ```bash
    python3 /abs/path/to/skill/scripts/render.py /abs/repo/.atlas/atlas.json \
@@ -128,7 +130,15 @@ are fixed, and the CLI prints everything you need.
       { "from": "agent", "to": "pg", "kind": "writes",
         "ghost": true, "claimedBy": "README.md:31" }
     ]
-  }
+  },
+  "tours": [
+    { "title": "The life of a chat request",
+      "steps": [
+        { "node": "chat", "text": "A question arrives at the dashboard chat endpoint." },
+        { "node": "agent", "text": "The support agent answers it, pulling order lookups as it goes." },
+        { "node": "gpt4o", "text": "The reply itself is drafted by GPT-4o." }
+      ] }
+  ]
 }
 ```
 
@@ -146,6 +156,7 @@ against, and `--check` prints the number to use.
 | edge `kind` | optional, prefer setting it: `calls`/`reads`/`writes`/`triggers`/`enqueues`, revealed on flow trace. Two nodes can have more than one edge — a service that both reads and writes a store gets both, not a compromise label. Use `enqueues` for a hand-off that returns before the work happens (a task queue, a job runner, a pub/sub publish): it is where the flow stops being synchronous, which is the first thing a reader needs when the far end never ran. |
 | edge `label` | optional, <=24, always visible — spend it on the few relationships that would surprise a reader ("charges on trial end"). See the label budget below. |
 | edge `evidence` | optional `path:line` — the call site you read that proves this edge. Records a verification the text heuristic can't repeat (DI, barrel re-exports, generated registries), so `--edges` stops re-flagging it. Use it for the few edges that need it, not as a default: attesting everything switches the check off, and `--edges` warns past 80% attested, once there are 20 or more edges. |
+| `tours` | optional top-level array (cap 6), a sibling of `graph` not a field inside it: `{title (<=60), steps: [{node, text (<=280)}]}` — authored, narrated walkthroughs the viewer plays as stories. Each step names a node id, and consecutive stops must be reachable along real edges (from *any* earlier stop, so forks are fine). Genuinely optional: a map without tours is complete, not deficient. See Tours below. |
 | edge `ghost` + `claimedBy` | `ghost: true` marks a **doc-claimed edge the code does not implement**; `claimedBy` (required with it) is a `path:line` ref to the doc making the claim, and is verified against the repo. Renders dashed and translucent, captioned "doc-claimed · <ref>"; excluded from flow tracing, blast radius, particles and `--edges`, and annotated in the "Ask agent…" prompt. Never both `ghost` and `evidence` — finding the performing line makes it a real edge. See Ghost edges below. |
 | `domain` | optional favicon domain, no scheme (openai.com) — only for things a recognizable company owns; use the product domain for models (claude.ai). |
 | `detail` | <=200: one sentence shown on click. **Treat it as required for internal nodes, like `sourceRef`** — it is what a reader who has never seen the repo actually reads. In a controlled pair of maps of one repo, the one with `detail` on 92% of nodes answered 16/16 comprehension questions and the one with 19% answered 10/16, and every missed answer was a missing sentence rather than a missing box. `--check` warns below 80%. |
@@ -419,6 +430,43 @@ Rules that keep ghosts honest:
 - **Mention notable ones in your summary.** A ghost is a finding, not a
   decoration — "the README says the agent writes to Postgres; nothing does" is
   the kind of sentence a map exists to produce.
+
+## Tours — narrated stories over the map
+
+The Play button walks entry flows mechanically. `tours` replace that with
+stories *you* write — and you are unusually well placed to write them, because
+you have just read all the code. A new engineer's first hour becomes watching
+two or three short narrations instead of clicking boxes.
+
+Optional, and meant to stay that way: 1–3 tours, one per flow a teammate would
+actually narrate at a whiteboard — the main request path, the scheduled or
+background story, the money path. Each step is a node id plus one or two
+sentences of present-tense prose. The viewer glides the camera stop to stop,
+lights the path progressively, and auto-advances on reading time; arrow keys
+drive it by hand.
+
+**Write the tours last, after the edges are settled.** A tour is prose over the
+graph, and stops that follow edges are the whole discipline.
+
+What makes a tour worth watching:
+
+- **Follow the edges.** Consecutive stops must be connected by a real edge, from
+  any earlier stop, so forks are fine ("here it splits: the charge is
+  synchronous, the receipt is enqueued"). `--check` warns on teleports, and the
+  warning is genuinely ambiguous — either the story invented a hop, or the hop
+  is real and *the map is missing an edge*. Read it before you edit the tour.
+- **Spend the sentences on what surprises.** The reader can see the boxes. Tell
+  them what they cannot see: where the flow stops being synchronous, what
+  happens on the unhappy path, which stop is the one that pages someone.
+- **A tour is a story, not coverage.** 4–8 stops. The inventory guarantees
+  completeness; a tour's job is orientation. Don't narrate what a hover trace
+  already says.
+- **A wrong tour is worse than no tour.** Narration carries authority the way a
+  stale `detail` does, and it is harder to doubt because it sounds like someone
+  who knows. Every claim in a step is subject to the same rule as a `detail`:
+  if you did not read the line, do not say it.
+- Steps may name a hidden child — the viewer expands its container in place —
+  but prefer top-level stops so the camera tells the whiteboard story.
 
 ## Details — the claims nothing checks
 

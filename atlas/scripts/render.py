@@ -76,6 +76,13 @@ LEN_LIMITS = {
     "sourceRef": 120,
 }
 EDGE_LABEL_LIMIT = 24
+# Tours are stories, not coverage: the inventory guarantees completeness, and a
+# reader who wanted every box would use the map. Two or three a new engineer
+# actually watches beat ten nobody plays, and past ~8 stops a story is a lecture.
+TOURS_CAP = 6
+TOUR_STEPS_CAP = 12
+TOUR_TITLE_LIMIT = 60
+TOUR_TEXT_LIMIT = 280
 # Labels never fade, so past roughly one per four edges DRAWN IN THE OPENING
 # VIEW the map opens as a thicket of grey text at fit-zoom and is legible only
 # once you zoom in.
@@ -168,6 +175,124 @@ DIR_FILE_CAP = 40
 # between --edges taking a second and taking a minute on a monorepo.
 SKIP_DIRS = {"node_modules", ".git", ".venv", "venv", "dist", "build", ".next",
              "vendor", "__pycache__", ".tox", "target", ".mypy_cache", ".pytest_cache"}
+
+
+def validate_tours(data, id_set, nodes, edges, errors, warnings):
+    """Check the authored tours: stops land on real nodes and follow real edges.
+
+    A tour is prose over the graph, so the graph is what keeps it honest. The
+    failure that matters is the teleport: a story that jumps between unconnected
+    nodes reads perfectly well in JSON and loses the viewer's reader completely
+    — the camera glides across half the map and no edge lights up behind it. And
+    a teleport is ambiguous in a useful way. Either the story invented a hop, or
+    the hop is real and the MAP is missing the edge; both are worth a look, which
+    is why this reports rather than rejects.
+
+    A fork is a legitimate story move ("here it splits: the charge is
+    synchronous, the receipt is enqueued"), so a stop may hang off ANY earlier
+    stop, not only the immediately previous one.
+    """
+    tours = data.get("tours")
+    if tours is None:
+        return
+    if not isinstance(tours, list):
+        warnings.append(
+            f"tours is {type(tours).__name__}, expected a list — the viewer ignores it"
+        )
+        return
+    if len(tours) > TOURS_CAP:
+        warnings.append(
+            f"{len(tours)} tours (cap {TOURS_CAP}) — two or three stories a new "
+            "engineer actually watches beat ten nobody plays"
+        )
+
+    children = {}
+    for n in nodes:
+        p = n.get("parent")
+        if p:
+            children.setdefault(p, []).append(n.get("id"))
+
+    subtree_cache = {}
+
+    def subtree(root):
+        """The node and its descendants — a stop on a container covers its children."""
+        if root in subtree_cache:
+            return subtree_cache[root]
+        out, stack = {root}, [root]
+        while stack:
+            for c in children.get(stack.pop(), []):
+                if c not in out:
+                    out.add(c)
+                    stack.append(c)
+        subtree_cache[root] = out
+        return out
+
+    pairs = set()
+    for e in edges:
+        # A doc's claim cannot carry a story hop: a tour that walks a ghost is
+        # narrating something the code does not do.
+        if e.get("ghost"):
+            continue
+        f, t = e.get("from"), e.get("to")
+        if f in id_set and t in id_set:
+            pairs.add((f, t))
+
+    def connected(a, b):
+        sa, sb = subtree(a), subtree(b)
+        return any((x, y) in pairs or (y, x) in pairs for x in sa for y in sb)
+
+    for ti, t in enumerate(tours):
+        if not isinstance(t, dict):
+            errors.append(f"tours[{ti}] is {type(t).__name__}, expected an object")
+            continue
+        title = t.get("title")
+        label = title if isinstance(title, str) and title else f"tours[{ti}]"
+        if not title:
+            errors.append(f"tours[{ti}] has no title")
+        elif len(title) > TOUR_TITLE_LIMIT:
+            warnings.append(
+                f"tour {label!r} title is {len(title)} chars (cap {TOUR_TITLE_LIMIT})"
+            )
+        steps = t.get("steps")
+        if not isinstance(steps, list) or not steps:
+            errors.append(f"tour {label!r} has no steps")
+            continue
+        if len(steps) > TOUR_STEPS_CAP:
+            warnings.append(
+                f"tour {label!r} has {len(steps)} steps (cap {TOUR_STEPS_CAP}) — "
+                "a story that long is a lecture; split it or cut the detours"
+            )
+        seen = []
+        for si, s in enumerate(steps):
+            nid = s.get("node") if isinstance(s, dict) else None
+            if nid not in id_set:
+                errors.append(
+                    f"tour {label!r} steps[{si}] node {nid!r} is not a node id"
+                )
+                continue
+            text = s.get("text")
+            if not text:
+                warnings.append(
+                    f"tour {label!r} steps[{si}] ({nid}) has no text — a stop with "
+                    "no sentence is the auto tour wearing a title"
+                )
+            elif not isinstance(text, str):
+                warnings.append(
+                    f"tour {label!r} steps[{si}] text is {type(text).__name__}, "
+                    "expected a string"
+                )
+            elif len(text) > TOUR_TEXT_LIMIT:
+                warnings.append(
+                    f"tour {label!r} steps[{si}] text is {len(text)} chars "
+                    f"(cap {TOUR_TEXT_LIMIT}) — one or two sentences per stop"
+                )
+            if seen and nid not in seen and not any(connected(p, nid) for p in seen):
+                warnings.append(
+                    f"tour {label!r} steps[{si}] jumps to {nid!r} with no edge from "
+                    "any earlier stop (or their children) — follow the edges, or "
+                    "draw the missing edge if the hop is real and the map is what's wrong"
+                )
+            seen.append(nid)
 
 
 def validate(data):
@@ -527,6 +652,8 @@ def validate(data):
             "carry the ordinary relationships and keep labels for the ones that "
             "would surprise a reader"
         )
+
+    validate_tours(data, id_set, nodes, edges, errors, warnings)
 
     return errors, warnings, len(top_level), len(nodes), len(edges)
 
@@ -1398,9 +1525,12 @@ def main():
         ghosts = sum(1 for e in (data.get("graph") or {}).get("edges") or []
                      if isinstance(e, dict) and e.get("ghost"))
         ghost_note = f" ({ghosts} doc-claimed)" if ghosts else ""
+        tours = data.get("tours")
+        tour_note = (f", {len(tours)} tours"
+                     if isinstance(tours, list) and tours else "")
         print(f"{atlas_path} is valid "
               f"({top_level_count} top-level of {node_count} nodes, "
-              f"{edge_count} edges{ghost_note}{source_note}{rules_note}){warn_note}")
+              f"{edge_count} edges{ghost_note}{tour_note}{source_note}{rules_note}){warn_note}")
         # Warnings are the whole quality bar for a map — SKILL.md tells the
         # agent to re-run until it is clean, and without this a check that
         # always exits 0 cannot gate anything on that.

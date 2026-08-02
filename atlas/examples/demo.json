@@ -292,5 +292,57 @@
         "claimedBy": "README.md:24"
       }
     ]
-  }
+  },
+  "tours": [
+    {
+      "title": "The life of a support question",
+      "steps": [
+        {
+          "node": "app",
+          "text": "A question arrives at the Next.js chat route — the only authenticated way into the system."
+        },
+        {
+          "node": "support",
+          "text": "The support agent takes it and answers tickets, looking up order history as it goes."
+        },
+        {
+          "node": "pg",
+          "text": "Those lookups hit Postgres directly. This is the stop that pages someone: the agent has no cache, so a slow query is a slow reply."
+        },
+        {
+          "node": "claude",
+          "text": "The reply itself is drafted by Claude Fable 5, streamed back to the browser token by token."
+        },
+        {
+          "node": "slack",
+          "text": "When the agent can't answer, it escalates to Slack — the one path that leaves the product and reaches a human."
+        }
+      ]
+    },
+    {
+      "title": "What the nightly cron does",
+      "steps": [
+        {
+          "node": "cron",
+          "text": "Every night the digest cron wakes up. Nothing here is request-triggered, which is why failures are invisible until someone notices a missing email."
+        },
+        {
+          "node": "research",
+          "text": "First it runs the research agent over the day's activity to build the digest."
+        },
+        {
+          "node": "exa",
+          "text": "Research fans out to Exa for search, then to Firecrawl for pages worth reading in full."
+        },
+        {
+          "node": "resend",
+          "text": "The finished digest goes out through Resend. Note the dashed line beside this one: the README claims the support agent mails here too, and nothing in the code does."
+        },
+        {
+          "node": "judge",
+          "text": "Separately, the evals judge scores yesterday's answers with an LLM-as-judge pass and writes the scores back to Postgres."
+        }
+      ]
+    }
+  ]
 }
