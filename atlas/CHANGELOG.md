@@ -26,9 +26,26 @@ don't invalidate an existing map.
 ## Unreleased — checks, not rules
 
 No ruleset bump: nothing here changes what a field means, so no existing map
-needs re-deriving. That includes ghost edges — a map with none is not wrong,
-only silent about a claim it was previously told to discard.
+needs re-deriving. That includes ghost edges and tours — both are additive and
+optional, and a map with neither is not wrong, only quieter.
 
+- **A group no longer drags an entry point out of its lane.** A user group is
+  laid out as one unit at its members' median lane, and a feature group is
+  usually one command plus the services it drives — so the median landed on the
+  services and moved the command right, into the column it triggers. Observed on
+  a real map: 4 of 9 entries displaced, exactly the 4 carrying a `group`.
+  `entry`/`cron` now detach from the unit and keep lane 0, while keeping their
+  `group` field (still searchable, still in the "Ask agent…" prompt); the box
+  forms around the rest. Groups that are mostly entries are unaffected.
+- **Narrated tours.** An optional top-level `tours` array — authored stories
+  over the main flows, played by the viewer with a gliding camera, a caption
+  card, progressive path lighting and arrow-key control. Optional on purpose: a
+  map without tours is complete, not deficient, and no existing map is worse
+  for lacking them. `--check` warns on **teleports** (consecutive stops must
+  follow real edges from any earlier stop, so forks are fine), on stops with no
+  sentence, and on a story that has grown into a lecture. The teleport warning
+  is deliberately ambiguous about blame: a hop with no edge means either the
+  story invented it or the map is missing the edge.
 - **Ghost edges.** `ghost: true` plus `claimedBy: "README.md:31"` records a
   doc-claimed arrow the code does not implement — the "arrows out of a diagram"
   case, which the rules previously told you to drop on the floor. Drawn dashed

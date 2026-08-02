@@ -255,6 +255,14 @@
   const isContainer = id => childrenOf.has(id);
   const rawEdges = (DATA.graph?.edges || []).filter(e => byId.has(e.from) && byId.has(e.to));
 
+  // Authored tours, filtered to what this graph can actually play: a step
+  // naming a node that isn't here would strand the camera mid-story.
+  const TOURS = (DATA.tours || [])
+    .filter(t => t && Array.isArray(t.steps))
+    .map(t => ({ title: t.title || "Tour",
+                 steps: t.steps.filter(s => s && byId.has(s.node)) }))
+    .filter(t => t.steps.length);
+
   const expanded = new Set();
   let focusRootId = null;
 
@@ -278,10 +286,17 @@
       return true;
     });
   }
+  // Entry/cron nodes released from their user group by the lane pass below,
+  // because the group would otherwise have dragged them out of lane 0. Recomputed
+  // per render; read here so every layoutGroup consumer (bucketing, sub-columns,
+  // padding, group boxes) sees one consistent answer.
+  const detachedFromGroup = new Set();
+
   // Layout unit: an expanded container stacks with its children; else the user group.
   function layoutGroup(n) {
     if (n.parent && expanded.has(n.parent)) return "__c:" + n.parent;
     if (isContainer(n.id) && expanded.has(n.id)) return "__c:" + n.id;
+    if (detachedFromGroup.has(n.id)) return null;
     return n.group ? "__g:" + n.group : null;
   }
 
@@ -423,6 +438,8 @@
       return idx === -1 ? LANES.length - 1 : idx;
     };
     const rank = new Map(curNodes.map(n => [n.id, laneOf(n)]));
+    const ENTRY_LANE = 0;                    // LANES[0] — entry + cron
+    detachedFromGroup.clear();               // before the first layoutGroup call
     const units = new Map();
     for (const n of curNodes) {
       const g = layoutGroup(n);
@@ -440,6 +457,28 @@
       } else {
         const ranks = members.map(m => rank.get(m.id)).sort((a, b) => a - b);
         lane = ranks[Math.floor(ranks.length / 2)];
+        // A group may not move an entry point out of the Entry points lane.
+        // A feature group is usually one command plus the services it drives, so
+        // the median lands on the services and the median rule used to drag the
+        // command right — putting the reader's starting point in among the things
+        // it starts. Lane position is the map's one always-true statement, and an
+        // entry is the kind it matters most for, so the group yields here: the
+        // entry stays in lane 0 and leaves the unit, which also keeps the group
+        // box from spanning the column gap.
+        //
+        // Only when the group would actually move them. A group that is mostly
+        // entries has median 0 already, so a deliberate "Public API" box around
+        // three routes still forms exactly as before.
+        if (lane !== ENTRY_LANE) {
+          const leaving = members.filter(m => laneOf(m) === ENTRY_LANE);
+          if (leaving.length) {
+            leaving.forEach(m => detachedFromGroup.add(m.id));
+            const kept = members.filter(m => laneOf(m) !== ENTRY_LANE);
+            units.set(g, kept);              // the box forms around what remains
+            kept.forEach(m => rank.set(m.id, lane));
+            continue;                        // detached members keep laneOf()
+          }
+        }
       }
       members.forEach(m => rank.set(m.id, lane));
     }
@@ -818,11 +857,12 @@
       sub.textContent = n.sub;
       el.appendChild(sub);
     }
-    // Hover-tracing is suppressed while a blast is on screen: the two say
-    // different things with the same cards, and a stray pointer crossing the map
-    // should not narrate over the answer the reader asked for.
-    el.addEventListener("pointerenter", () => { if (!selectedId && !blastId) highlight(n.id); });
-    el.addEventListener("pointerleave", () => { if (!selectedId && !blastId) highlight(null); });
+    // Hover-tracing is suppressed while a blast or a story is on screen: all
+    // three say different things with the same cards, and a stray pointer
+    // crossing the map should not narrate over the answer the reader asked for.
+    const hoverable = () => !selectedId && !blastId && !storyActive;
+    el.addEventListener("pointerenter", () => { if (hoverable()) highlight(n.id); });
+    el.addEventListener("pointerleave", () => { if (hoverable()) highlight(null); });
     el.addEventListener("contextmenu", ev => { ev.preventDefault(); startBlast(n.id); });
     el.addEventListener("click", ev => {
       ev.stopPropagation();
@@ -1007,17 +1047,26 @@
     const q = (search.value || "").trim().toLowerCase();
     const kindKeep = kindFilter ? computeKindKeep() : null;
     const searchHits = q ? computeSearchHits(q) : null;
-    // Blast is the fourth input and it writes its own two classes, but it is
-    // written HERE for the same reason the other three are: one pass, one
-    // writer, so nothing silently undoes anything else.
+    // Blast and story are the fourth and fifth inputs. They write through HERE
+    // for the same reason the other three do: one pass, one writer, so nothing
+    // silently undoes anything else. A story painting its own hl/dim was the
+    // bug — every pointerenter on the map would repaint over the narration
+    // while it was still playing.
     const blast = blastState();
+    const story = storyState();
     nodeCache.forEach((el, id) => {
       const inKind = !kindKeep || kindKeep.has(id);
       const inSearch = !searchHits || searchHits.has(id);
       const inTrace = !traceNodeSet || traceNodeSet.has(id);
       el.classList.toggle("match", !!(searchHits && searchHits.has(id)));
-      el.classList.toggle("hl", !!(traceNodeSet && traceNodeSet.has(id) && id !== traceId));
-      el.classList.toggle("dim", !inKind || !inSearch || !inTrace);
+      // A story owns the highlight while it plays: the lit set is the path it
+      // has walked so far, and the current stop is the one node it points at.
+      el.classList.toggle("hl", story
+        ? id === story.cur
+        : !!(traceNodeSet && traceNodeSet.has(id) && id !== traceId));
+      el.classList.toggle("dim", story
+        ? !story.keep.has(id)
+        : (!inKind || !inSearch || !inTrace));
       el.classList.toggle("blast-dead", !!blast && id === blast.vid);
       el.classList.toggle("blast-hit", !!blast && blast.hit.has(id));
     });
@@ -1025,8 +1074,12 @@
     edgeEls.forEach(({ e, g }, i) => {
       const inKindEdge = !kindKeep || kindKeep.has(e.from) || kindKeep.has(e.to);
       const inTraceEdge = !traceEdgeSet || traceEdgeSet.has(i);
-      g.classList.toggle("hl", !!(traceEdgeSet && traceEdgeSet.has(i)));
-      g.classList.toggle("dim", !inKindEdge || !inTraceEdge);
+      // Forks included: an edge lights once BOTH its ends have been visited, so
+      // a stop branching off an earlier stop lights its own edge, not a
+      // pretend one back to the previous stop.
+      const inStory = story && !e.ghost && story.keep.has(e.from) && story.keep.has(e.to);
+      g.classList.toggle("hl", story ? !!inStory : !!(traceEdgeSet && traceEdgeSet.has(i)));
+      g.classList.toggle("dim", story ? !inStory : (!inKindEdge || !inTraceEdge));
       g.classList.toggle("blast-hit", !!blast && blast.edgeSet.has(i));
     });
     blastBar.hidden = !blast;
@@ -1103,12 +1156,20 @@
   addEventListener("keydown", ev => {
     if (ev.key === "Escape") {
       if (!shortcutsEl.hidden) setShortcuts(false);
+      else if (!tourMenu.hidden) setTourMenu(false);
       else if (!sheet.hidden) closeSheet();
+      else if (storyActive) stopStory();
       else if (tourActive) stopTour();
       else if (blastId) exitBlast();
       else if (selectedId) clearSelection();
       else if (kindFilter) { kindFilter = null; applyVisualState(); }
       else if (focusRootId) exitFocus();
+      return;
+    }
+    // Arrows drive a story by hand — the auto-advance is a default, not a rail.
+    if (storyActive && (ev.key === "ArrowRight" || ev.key === "ArrowLeft")) {
+      ev.preventDefault();
+      storyStep(ev.key === "ArrowRight" ? 1 : -1);
       return;
     }
     // single-letter shortcuts must not fire while typing in the search box
@@ -1806,10 +1867,135 @@
     playBtn.classList.remove("active");
     exitFocus();                             // restore the overview
   }
-  playBtn.addEventListener("click", () => { if (tourActive) stopTour(); else startTour(); });
-  // any manual interaction (except pressing Play) stops the tour
+  // ---------- story mode: authored, narrated journeys ----------
+  // The auto tour above walks entry flows mechanically. A story is written by
+  // the agent that just read the code: the camera glides stop to stop, a
+  // caption narrates each hop, and the path lights up progressively behind it.
+  const storyCard = document.getElementById("storycard");
+  let storyActive = false, storyTour = null, storyIdx = 0, storyTimer = null;
+
+  // Reading time, not a metronome: a short caption moves on, a long one lingers.
+  // ~230wpm plus a beat to find the node the camera just flew to.
+  const storyDuration = text => {
+    const words = (text || "").split(/\s+/).filter(Boolean).length;
+    return Math.min(9000, Math.max(3600, 1800 + words * 260));
+  };
+
+  // A step naming a hidden child expands its ancestors, so the story points at
+  // the node it actually named rather than whatever container was swallowing it.
+  function ensureVisible(id) {
+    const chain = [];
+    let p = byId.get(id)?.parent;
+    while (p) { chain.unshift(p); p = byId.get(p)?.parent; }
+    const missing = chain.filter(a => !expanded.has(a));
+    if (!missing.length) return;
+    missing.forEach(a => expanded.add(a));
+    render(true);
+  }
+
+  // The visited subgraph, for applyVisualState to paint. Side-effect free and
+  // recomputed per pass, so a re-layout mid-story lands on the new node ids.
+  function storyState() {
+    if (!storyActive || !storyTour) return null;
+    const steps = storyTour.steps;
+    const cur = effectiveId(steps[Math.min(storyIdx, steps.length - 1)].node);
+    const keep = new Set(steps.slice(0, storyIdx + 1).map(s => effectiveId(s.node)));
+    return { cur, keep };
+  }
+
+  function runStoryStep() {
+    if (!storyActive) return;
+    const steps = storyTour.steps;
+    if (storyIdx >= steps.length) { stopStory(); return; }
+    const step = steps[storyIdx];
+    ensureVisible(step.node);
+    const p = curPos.get(effectiveId(step.node));
+    if (p) {
+      const S = Math.max(0.75, Math.min(1.15, scale));
+      // Aim above centre so the caption card never sits on top of the stop.
+      tweenCamera(innerWidth / 2 - (p.x + p.w / 2) * S,
+                  innerHeight * 0.42 - (p.y + p.h / 2) * S, S, 650);
+    }
+    applyVisualState();
+    document.getElementById("story-title").textContent = storyTour.title;
+    document.getElementById("story-count").textContent = `${storyIdx + 1} / ${steps.length}`;
+    document.getElementById("story-text").textContent =
+      step.text || byId.get(step.node)?.detail || "";
+    document.getElementById("story-prev").disabled = storyIdx === 0;
+    clearTimeout(storyTimer);
+    storyTimer = setTimeout(() => { storyIdx++; runStoryStep(); }, storyDuration(step.text));
+  }
+  function startStory(t) {
+    stopTour();
+    exitBlast();
+    clearSelection();
+    kindFilter = null;
+    storyActive = true; storyTour = t; storyIdx = 0;
+    playBtn.classList.add("active");
+    storyCard.hidden = false;
+    runStoryStep();
+  }
+  function stopStory() {
+    if (!storyActive) return;
+    storyActive = false; storyTour = null;
+    clearTimeout(storyTimer); storyTimer = null;
+    if (camRAF) { cancelAnimationFrame(camRAF); camRAF = null; }
+    playBtn.classList.remove("active");
+    storyCard.hidden = true;
+    applyVisualState();
+  }
+  function storyStep(delta) {
+    if (!storyActive) return;
+    clearTimeout(storyTimer);
+    storyIdx = Math.max(0, storyIdx + delta);
+    runStoryStep();                          // walking past the end stops the story
+  }
+  document.getElementById("story-prev").addEventListener("click", () => storyStep(-1));
+  document.getElementById("story-next").addEventListener("click", () => storyStep(1));
+  document.getElementById("story-stop").addEventListener("click", stopStory);
+
+  // ---------- Play: the authored stories when there are any, the auto tour if not ----------
+  const tourMenu = document.getElementById("tourmenu");
+  function setTourMenu(open) {
+    tourMenu.hidden = !open;
+    playBtn.setAttribute("aria-expanded", String(open));
+  }
+  function menuEntry(title, meta, onClick, cls) {
+    const b = document.createElement("button");
+    b.type = "button";
+    if (cls) b.className = cls;
+    // Built as nodes, not innerHTML: a tour title is LLM-authored text from a
+    // codebase this viewer never vetted.
+    const strong = document.createElement("b");
+    strong.textContent = title;
+    const sub = document.createElement("span");
+    sub.textContent = meta;
+    b.append(strong, sub);
+    b.addEventListener("click", () => { setTourMenu(false); onClick(); });
+    tourMenu.appendChild(b);
+  }
+  for (const t of TOURS) {
+    menuEntry(t.title, `${t.steps.length} stop${t.steps.length === 1 ? "" : "s"}`,
+              () => startStory(t));
+  }
+  if (TOURS.length && tourSequence().length) {
+    menuEntry("Auto flow tour", "every entry point", startTour, "auto");
+  }
+
+  playBtn.addEventListener("click", () => {
+    if (storyActive) { stopStory(); return; }
+    if (tourActive) { stopTour(); return; }
+    if (TOURS.length) setTourMenu(tourMenu.hidden);
+    else startTour();
+  });
+  document.addEventListener("pointerdown", ev => {
+    if (!tourMenu.hidden && !ev.target.closest("#tourmenu, #play")) setTourMenu(false);
+  });
+  // any manual interaction with the MAP (not the playback chrome) stops playback
   ["pointerdown", "wheel"].forEach(t => document.addEventListener(t, ev => {
-    if (tourActive && !ev.target.closest("#play")) stopTour();
+    if (ev.target.closest("#play, #storycard, #tourmenu")) return;
+    if (tourActive) stopTour();
+    if (storyActive) stopStory();
   }, true));
 
   // ---------- boot ----------
@@ -1821,6 +2007,12 @@
 
   render(false);
 
-  // hide Play when the scan has no valid tour sequence
-  if (!tourSequence().length) playBtn.style.display = "none";
+  // Play is hidden only when there is nothing at all to play — an authored tour
+  // counts even on a map with no entry points to auto-walk.
+  if (!TOURS.length && !tourSequence().length) playBtn.style.display = "none";
+  if (TOURS.length) {
+    playBtn.title = `${TOURS.length} narrated tour${TOURS.length === 1 ? "" : "s"} of this codebase`;
+    playBtn.setAttribute("aria-haspopup", "true");
+    playBtn.setAttribute("aria-expanded", "false");
+  }
 })();

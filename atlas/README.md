@@ -21,6 +21,14 @@ python3 atlas/scripts/render.py .atlas/atlas.json --open
 
 The viewer supports:
 
+- **narrated tours**: the agent that read the code writes `tours` — short
+  authored stories over the main flows ("the life of a support question").
+  Play opens a menu of them; the camera glides stop to stop, a caption narrates
+  each hop in a sentence or two, the visited path lights up progressively, and
+  stops auto-advance on reading time (← → to drive by hand). A new engineer's
+  first hour becomes watching two short stories instead of clicking boxes.
+  `--check` warns on teleports — consecutive stops must follow real edges — so
+  a story cannot quietly narrate a hop the code doesn't make
 - **blast radius**: right-click any node and it dies — everything that
   transitively depends on it goes dark while the untouched paths stay lit, and a
   banner counts the fallout ("If Postgres dies, 8 components go dark"). One
@@ -45,8 +53,9 @@ The viewer supports:
   relearning the legend
 - **living motion**: flow particles travel along each edge in flow direction
   (color-coded by read/write/call), entry points pulse, and a **Play** button
-  runs a guided tour that auto-walks each entry point's flow. Motion honors
-  `prefers-reduced-motion`, has a Motion off-switch, and is always off in print
+  opens the story menu — the authored tours plus an auto tour that walks each
+  entry point's flow. Motion honors `prefers-reduced-motion`, has a Motion
+  off-switch, and is always off in print
 
 - **semantic lanes**: nodes are arranged in labeled columns — Entry points →
   Services & agents → Models & tools → Data & external — so horizontal position

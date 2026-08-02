@@ -39,5 +39,19 @@
         "evidence": "src/svc.ts:12"
       }
     ]
-  }
+  },
+  "tours": [
+    {
+      "title": "This tour title is deliberately engineered to run past the sixty character cap",
+      "steps": [
+        {
+          "node": "entry",
+          "text": "The story starts here."
+        },
+        {
+          "node": "svc"
+        }
+      ]
+    }
+  ]
 }
