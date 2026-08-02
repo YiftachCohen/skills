@@ -8,24 +8,27 @@ Do NOT read files one by one — you will run out of context.
 - **Useful greps**: provider SDKs (`@ai-sdk/`, `anthropic`, `openai`),
   `streamText|generateText|tool(`, `stripe|resend|twilio|slack`, DB clients,
   `cron|queue|worker` — hit locations show where each subsystem lives.
-- **Fan out**, if subagents are available: 2–4 parallel investigations, e.g.
-  entries+crons / AI usage / services+stores+integrations. Instruct each to
-  return ONLY compact JSON (`{nodes, edges}` in the contract shape, with
-  `sourceRef`s) — no prose report, no file excerpts; merge and dedupe yourself.
+- **Fan out**, *if subagents are available*: 2–4 parallel investigations, e.g.
+  entries+crons / AI usage / services+stores+integrations.
+  **`references/slice-prompt.md` is the prompt** —
+  paste it verbatim; it carries the vocabulary a subagent has not read and pins
+  the JSON-only return format that keeps the fan-out affordable. (That file
+  applies whenever you delegate, not only above 500 files.) Ask each slice for
+  inventory lines for its own scope too: reconciliation is per-line, and the
+  agent that read the code is the one who knows what it found.
   Agree the shared ids up front: name the handful of nodes more than one of them
   will touch and fix each one's `kind` (`postgres`, not `neon-db` in one report
   and `db` in another). Reconciling id collisions afterwards costs more than the
   fan-out saves.
-  A subagent has not read this skill, so the vocabulary has to travel with the
-  prompt: the eight node kinds, the five edge kinds (`calls`/`reads`/`writes`/
-  `triggers`/`enqueues`), and the `sourceRef` + `detail` rules. Left unstated
-  they invent edge kinds (`uses`, `depends`) and you rewrite every edge by hand
-  — in one run all four came back invalid. **`references/slice-prompt.md` is
-  that block, ready to paste**, with four marked slots for the slice's own
-  scope, budget and shared ids; writing it out per slice is where the fan-out
-  cost goes. Ask each for inventory lines for its own slice too; reconciliation
-  is per-line, and the agent that read the code is the one who knows what it
-  found.
+- **No subagents? Walk the same slices sequentially.** Codex sessions with
+  collaboration disabled, and any runtime without a Task tool, still map a large
+  repo — the slices are a decomposition, not a parallelism trick. Take them one
+  at a time from the survey, appending each slice's nodes and inventory lines to
+  the files before starting the next, and keep `.atlas/survey.txt` as the shared
+  context each slice would otherwise have been handed. It is slower in
+  wall-clock and costs about the same in tokens; what you lose is only the
+  independence that makes two slices disagree usefully, so be stricter with
+  yourself about the id list up front.
 - **Budget TOTAL nodes per slice, not just top-level ones.** Children are where
   the overrun happens: cap each slice's top level and its children are still
   unbounded, so five slices that each respected their top-level budget returned
