@@ -286,10 +286,17 @@
       return true;
     });
   }
+  // Entry/cron nodes released from their user group by the lane pass below,
+  // because the group would otherwise have dragged them out of lane 0. Recomputed
+  // per render; read here so every layoutGroup consumer (bucketing, sub-columns,
+  // padding, group boxes) sees one consistent answer.
+  const detachedFromGroup = new Set();
+
   // Layout unit: an expanded container stacks with its children; else the user group.
   function layoutGroup(n) {
     if (n.parent && expanded.has(n.parent)) return "__c:" + n.parent;
     if (isContainer(n.id) && expanded.has(n.id)) return "__c:" + n.id;
+    if (detachedFromGroup.has(n.id)) return null;
     return n.group ? "__g:" + n.group : null;
   }
 
@@ -431,6 +438,8 @@
       return idx === -1 ? LANES.length - 1 : idx;
     };
     const rank = new Map(curNodes.map(n => [n.id, laneOf(n)]));
+    const ENTRY_LANE = 0;                    // LANES[0] — entry + cron
+    detachedFromGroup.clear();               // before the first layoutGroup call
     const units = new Map();
     for (const n of curNodes) {
       const g = layoutGroup(n);
@@ -448,6 +457,28 @@
       } else {
         const ranks = members.map(m => rank.get(m.id)).sort((a, b) => a - b);
         lane = ranks[Math.floor(ranks.length / 2)];
+        // A group may not move an entry point out of the Entry points lane.
+        // A feature group is usually one command plus the services it drives, so
+        // the median lands on the services and the median rule used to drag the
+        // command right — putting the reader's starting point in among the things
+        // it starts. Lane position is the map's one always-true statement, and an
+        // entry is the kind it matters most for, so the group yields here: the
+        // entry stays in lane 0 and leaves the unit, which also keeps the group
+        // box from spanning the column gap.
+        //
+        // Only when the group would actually move them. A group that is mostly
+        // entries has median 0 already, so a deliberate "Public API" box around
+        // three routes still forms exactly as before.
+        if (lane !== ENTRY_LANE) {
+          const leaving = members.filter(m => laneOf(m) === ENTRY_LANE);
+          if (leaving.length) {
+            leaving.forEach(m => detachedFromGroup.add(m.id));
+            const kept = members.filter(m => laneOf(m) !== ENTRY_LANE);
+            units.set(g, kept);              // the box forms around what remains
+            kept.forEach(m => rank.set(m.id, lane));
+            continue;                        // detached members keep laneOf()
+          }
+        }
       }
       members.forEach(m => rank.set(m.id, lane));
     }

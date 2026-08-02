@@ -29,6 +29,14 @@ No ruleset bump: nothing here changes what a field means, so no existing map
 needs re-deriving. That includes ghost edges and tours — both are additive and
 optional, and a map with neither is not wrong, only quieter.
 
+- **A group no longer drags an entry point out of its lane.** A user group is
+  laid out as one unit at its members' median lane, and a feature group is
+  usually one command plus the services it drives — so the median landed on the
+  services and moved the command right, into the column it triggers. Observed on
+  a real map: 4 of 9 entries displaced, exactly the 4 carrying a `group`.
+  `entry`/`cron` now detach from the unit and keep lane 0, while keeping their
+  `group` field (still searchable, still in the "Ask agent…" prompt); the box
+  forms around the rest. Groups that are mostly entries are unaffected.
 - **Narrated tours.** An optional top-level `tours` array — authored stories
   over the main flows, played by the viewer with a gliding camera, a caption
   card, progressive path lighting and arrow-key control. Optional on purpose: a
