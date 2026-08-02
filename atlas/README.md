@@ -21,6 +21,20 @@ python3 atlas/scripts/render.py .atlas/atlas.json --open
 
 The viewer supports:
 
+- **blast radius**: right-click any node and it dies — everything that
+  transitively depends on it goes dark while the untouched paths stay lit, and a
+  banner counts the fallout ("If Postgres dies, 8 components go dark"). One
+  click flips it to change-impact ("what can a change here reach?"). It costs
+  the agent nothing and changes no contract — it is pure traversal over the
+  edges the map already has, which quietly makes edge correctness *visible*: a
+  misattributed edge now darkens the wrong half of the map
+- **ghost edges**: the arrows the docs claim but no code implements. Instead of
+  being dropped on the floor, they are kept — `ghost: true` plus
+  `claimedBy: "README.md:31"` draws a dashed, translucent edge captioned with
+  its source, so the map shows the delta between the system's self-image and its
+  reality. Ghosts are excluded from tracing, blast radius, particles and the
+  `--edges` check, and the "Ask agent…" prompts annotate them so no agent goes
+  hunting for code that doesn't exist
 - **three themes**: `living` (the animated near-black default), `print` (a
   bright editorial light theme for embeds and printing) and `terrain` (a
   surveyed-chart theme — aged paper, earth-pigment ink, ruled rather than

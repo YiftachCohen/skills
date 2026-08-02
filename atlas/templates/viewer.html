@@ -79,6 +79,7 @@
     <div class="sc"><b>scroll</b><span>zoom · shift-scroll pans sideways</span></div>
     <div class="sc"><b>click</b><span>open a node's detail</span></div>
     <div class="sc"><b>double-click</b><span>focus that node's flow</span></div>
+    <div class="sc"><b>right-click</b><span>blast radius — what breaks if it dies</span></div>
     <div class="sc"><b>kind pill</b><span>filter the map to one kind</span></div>
     <h4>Keys</h4>
     <div class="sc"><b>M</b><span>show / hide the minimap</span></div>
@@ -94,9 +95,16 @@
     <div class="src" id="d-src"></div>
     <div class="actions">
       <button id="d-focus">Focus flow</button>
+      <button id="d-blast" title="What breaks if this dies? (or right-click any node)">Blast radius</button>
       <button id="d-discuss">Ask agent…</button>
       <button id="d-toggle" style="display:none"></button>
     </div>
+  </div>
+
+  <div id="blastbar" hidden>
+    <span id="blast-msg"></span>
+    <button id="blast-flip" type="button"></button>
+    <button id="blast-exit" type="button" aria-label="Exit blast radius">✕</button>
   </div>
 
   <div id="promptsheet" role="dialog" aria-modal="false" aria-labelledby="ps-title" hidden>

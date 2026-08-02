@@ -26,7 +26,23 @@ don't invalidate an existing map.
 ## Unreleased — checks, not rules
 
 No ruleset bump: nothing here changes what a field means, so no existing map
-needs re-deriving.
+needs re-deriving. That includes ghost edges — a map with none is not wrong,
+only silent about a claim it was previously told to discard.
+
+- **Ghost edges.** `ghost: true` plus `claimedBy: "README.md:31"` records a
+  doc-claimed arrow the code does not implement — the "arrows out of a diagram"
+  case, which the rules previously told you to drop on the floor. Drawn dashed
+  and captioned with its source; excluded from flow tracing, blast radius,
+  particles and `--edges`; annotated in the "Ask agent…" prompts so no agent
+  goes hunting for code that does not exist. `claimedBy` is required and is
+  resolved strictly inside the repo root like `sourceRef`, and a ghost carrying
+  `evidence` is flagged as the contradiction it is.
+- **Blast radius.** Right-click any node (or use the detail popover's button):
+  it dies, and everything that transitively depends on it goes dark, with a
+  count and a one-click flip to change-impact. Pure viewer traversal over the
+  edges a map already has — no contract change, nothing to author, and it works
+  on every atlas ever written. It also makes edge correctness *visible*: an edge
+  misattributed by one hop now darkens the visibly wrong half of the map.
 
 **Cost.** A 138-file Go repo cost 877k subagent tokens to map. Most of that was
 avoidable, and the fixes are process rather than contract:
