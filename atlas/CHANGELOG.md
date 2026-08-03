@@ -29,6 +29,31 @@ No ruleset bump: nothing here changes what a field means, so no existing map
 needs re-deriving. That includes ghost edges and tours — both are additive and
 optional, and a map with neither is not wrong, only quieter.
 
+- **The Entry points lane leads with the origin.** It ordered by kind and then
+  alphabetically, so the first box was whichever entry sorted first by id, and
+  every `cron` came after every `entry` however much of the system it drove — a
+  nightly self-scan sat bottom-right of a wrapped column, which reads as least
+  important. The lane now orders by root-ness: nodes nothing calls first, then
+  by how many nodes each reaches. On a real map that moves the root command from
+  second to first and the nightly job from tenth to second, with nothing to
+  author. Root-ness is computed once over the whole graph with every container
+  collapsed — being the origin is a property of the system, not of the current
+  view, so the anchor does not move when a container three columns away opens.
+  Ghost edges count for neither direction, the same rule tracing and blast
+  radius already follow. The other lanes still group by kind, which is right
+  where a lane holds four of them. SKILL.md now also says to draw a root
+  command's dispatch edges to its own subcommands: the ordering is read off the
+  edges, and that is the set most easily left undrawn.
+
+  Ordering alone was not enough where the lane wraps. A column break reads as a
+  boundary whether or not one is there, and the even split cut through the
+  middle of the dispatched commands — so two of them shared a column with the
+  origins and inherited their status. Lane 0 now breaks at the root boundary,
+  making the first column the ways in, and its sub-columns share a top edge
+  instead of each being centred on its own, so the origin is the first card in
+  the lane rather than sitting beside the tall column's midpoint. Both apply
+  only where the lane wraps at all; a short lane says the same thing
+  top-to-bottom without spending a column on it.
 - **A group no longer drags an entry point out of its lane.** A user group is
   laid out as one unit at its members' median lane, and a feature group is
   usually one command plus the services it drives — so the median landed on the

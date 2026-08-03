@@ -402,6 +402,23 @@ above are not optional, because it gives every edge a consequence a reader can
 *watch*. An edge misattributed by one hop now darkens the visibly wrong half of
 the map, which is how a wrong edge stops being a wrong line nobody squints at.
 
+**The order of the Entry points lane is read off these edges too.** It leads
+with the nodes nothing calls, then by how much of the map each one opens up, so
+the first box a reader sees is the system's actual starting point rather than
+whichever id sorted first alphabetically. The edge that makes that true is the
+one it is easiest never to draw: a root command dispatching to its own
+subcommands — `rootCmd.AddCommand(...)`, a router's `mount`, a dispatcher's
+registry. One real map had none of them, so the binary every command runs
+through was a peer of those commands with nothing joining them, and the lane
+fell back to alphabetical. Adding the five dispatch edges made the root reach 31
+of 36 top-level nodes and put it first. If a top-level entry starts other
+entries, draw those edges, with `evidence` like any other. A `cron` is ordered
+by the same rule rather than being parked after every `entry`, so a nightly job
+that drives half the system reads that way. Past seven the lane wraps, and the
+break falls on that boundary: the first column is the ways in, the rest is what
+they start. So a missing dispatch edge doesn't just misorder the lane — it puts
+a command in with the origins.
+
 ## Ghost edges — what the docs believe vs. what the code does
 
 You already find these: every "arrows out of a diagram" case above is a claim
