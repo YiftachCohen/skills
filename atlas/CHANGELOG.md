@@ -44,6 +44,16 @@ optional, and a map with neither is not wrong, only quieter.
   where a lane holds four of them. SKILL.md now also says to draw a root
   command's dispatch edges to its own subcommands: the ordering is read off the
   edges, and that is the set most easily left undrawn.
+
+  Ordering alone was not enough where the lane wraps. A column break reads as a
+  boundary whether or not one is there, and the even split cut through the
+  middle of the dispatched commands — so two of them shared a column with the
+  origins and inherited their status. Lane 0 now breaks at the root boundary,
+  making the first column the ways in, and its sub-columns share a top edge
+  instead of each being centred on its own, so the origin is the first card in
+  the lane rather than sitting beside the tall column's midpoint. Both apply
+  only where the lane wraps at all; a short lane says the same thing
+  top-to-bottom without spending a column on it.
 - **A group no longer drags an entry point out of its lane.** A user group is
   laid out as one unit at its members' median lane, and a feature group is
   usually one command plus the services it drives — so the median landed on the

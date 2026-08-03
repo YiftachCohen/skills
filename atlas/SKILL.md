@@ -414,7 +414,10 @@ fell back to alphabetical. Adding the five dispatch edges made the root reach 31
 of 36 top-level nodes and put it first. If a top-level entry starts other
 entries, draw those edges, with `evidence` like any other. A `cron` is ordered
 by the same rule rather than being parked after every `entry`, so a nightly job
-that drives half the system reads that way.
+that drives half the system reads that way. Past seven the lane wraps, and the
+break falls on that boundary: the first column is the ways in, the rest is what
+they start. So a missing dispatch edge doesn't just misorder the lane — it puts
+a command in with the origins.
 
 ## Ghost edges — what the docs believe vs. what the code does
 

@@ -642,19 +642,35 @@
           buckets.push(arr);
         }
       }
-      const numSub = Math.ceil(layer.length / MAX_PER_COL);
-      const perSub = Math.ceil(layer.length / numSub);
-      const subcols = [[]];
-      let count = 0;
-      for (const b of buckets) {
-        if (count > 0 && count + b.length > perSub && subcols.length < numSub) {
-          subcols.push([]);
-          count = 0;
+      const pack = bs => {
+        const total = bs.reduce((a, b) => a + b.length, 0);
+        const numSub = Math.max(1, Math.ceil(total / MAX_PER_COL));
+        const perSub = Math.ceil(total / numSub);
+        const subcols = [[]];
+        let count = 0;
+        for (const b of bs) {
+          if (count > 0 && count + b.length > perSub && subcols.length < numSub) {
+            subcols.push([]);
+            count = 0;
+          }
+          subcols[subcols.length - 1].push(...b);
+          count += b.length;
         }
-        subcols[subcols.length - 1].push(...b);
-        count += b.length;
+        return subcols;
+      };
+      // A wrapped lane reads as tiers, so when lane 0 wraps it breaks at the
+      // root boundary rather than at an even split. Ordering alone was not
+      // enough: with 3 origins and 7 dispatched commands the even 5/5 cut put
+      // two dispatched commands in the same column as the origins, and a column
+      // break is a boundary a reader believes. Now the first column IS the ways
+      // in. Only where the lane wraps anyway — this decides where an existing
+      // break falls, and a short lane says the same thing top-to-bottom without
+      // spending a column on it.
+      if (r === ENTRY_LANE && layer.length > MAX_PER_COL) {
+        const split = buckets.findIndex(b => entryRank(b[0]).root === 1);
+        if (split > 0) return [...pack(buckets.slice(0, split)), ...pack(buckets.slice(split))];
       }
-      return subcols;
+      return pack(buckets);
     });
 
     const padded = (list, cb) => {
@@ -682,9 +698,19 @@
     let cursorX = 0;
     layerSubcols.forEach((subcols, li) => {
       const x0 = cursorX;
+      // Lane 0's sub-columns share a top edge instead of each being centred on
+      // its own. The lane is read for "where do I start", and a short column of
+      // origins centred beside a tall column of the commands they dispatch puts
+      // a dispatched command above the origin it hangs off — undoing in reading
+      // order what the ordering just established. The lane as a whole is still
+      // centred, via its tallest column. Elsewhere centring is right: no column
+      // in those lanes claims to be first.
+      const sharedTop = layerRanks[li] === ENTRY_LANE
+        ? (tallest - Math.max(...subcols.map(subcolHeight))) / 2 + LANE_HEAD_H
+        : null;
       subcols.forEach((list, si) => {
         const x = cursorX + si * (NODE_W + SUBCOL_GAP);
-        let y = (tallest - subcolHeight(list)) / 2 + LANE_HEAD_H;
+        let y = sharedTop ?? ((tallest - subcolHeight(list)) / 2 + LANE_HEAD_H);
         padded(list, (d, n) => {
           if (n) pos.set(n.id, { x, y, w: NODE_W, h: nodeCache.get(n.id).offsetHeight });
           y += d;

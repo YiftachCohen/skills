@@ -116,14 +116,47 @@ def _fixture():
             "graph": {"nodes": nodes, "edges": edges}}
 
 
-def _lane_order(expand_all=False):
-    """Render the fixture, load it, and read back the Entry points column.
+def _wrapping_fixture():
+    """Ten entries — past MAX_PER_COL, so the lane wraps into sub-columns.
 
-    Returns ids top-to-bottom, sub-column by sub-column — i.e. reading order.
+    Three roots and seven commands they dispatch, the shape of the map this
+    came from. An even split would put two dispatched commands in the origins'
+    column, and a column break reads as a boundary whether or not one is there.
+    """
+    nodes = [{"id": "root-cli", "label": "cli", "kind": "entry",
+              "sub": "root command", "sourceRef": "main.go:1"},
+             {"id": "root-cron", "label": "Nightly", "kind": "cron",
+              "sub": "schedule — 03:00 UTC", "sourceRef": "main.go:2"},
+             {"id": "root-installer", "label": "install.sh", "kind": "entry",
+              "sub": "bootstrap", "sourceRef": "install.sh:1"},
+             {"id": "svc", "label": "S", "kind": "service",
+              "sub": "does the work", "sourceRef": "s.go:1"}]
+    edges = [{"from": "root-cron", "to": "svc", "kind": "calls"}]
+    # Seven subcommands the root dispatches, each reaching one less than the
+    # last so the order inside the second column is pinned too.
+    for i in range(7):
+        nodes.append({"id": f"sub{i}", "label": f"sub{i}", "kind": "entry",
+                      "sub": "subcommand", "sourceRef": f"cmd/{i}.go:1"})
+        nodes.append({"id": f"leaf{i}", "label": f"leaf{i}", "kind": "service",
+                      "sub": "leaf", "sourceRef": f"leaf/{i}.go:1"})
+        edges.append({"from": "root-cli", "to": f"sub{i}", "kind": "triggers"})
+        for j in range(i + 1):
+            edges.append({"from": f"sub{i}", "to": f"leaf{j}", "kind": "calls"})
+    return {"version": 1,
+            "project": {"name": "Wrap", "slug": "wrap", "tagline": "wrapping",
+                        "date": "2026-08-02", "rules": 3},
+            "graph": {"nodes": nodes, "edges": edges}}
+
+
+def _lane_cards(atlas, expand_all=False):
+    """Render an atlas, load it, and read back the Entry points lane.
+
+    Returns (id, x, y) per card, in reading order: sub-column by sub-column,
+    top to bottom within each.
     """
     with tempfile.TemporaryDirectory() as tmp:
         tmp = pathlib.Path(tmp)
-        (tmp / "fx.json").write_text(json.dumps(_fixture()))
+        (tmp / "fx.json").write_text(json.dumps(atlas))
         html = tmp / "fx.html"
         proc = subprocess.run(
             ["python3", str(_RENDER), str(tmp / "fx.json"), "-o", str(html),
@@ -154,7 +187,12 @@ def _lane_order(expand_all=False):
         if b - a > 226:          # NODE_W 196 + SUBCOL_GAP 30
             cut = a
             break
-    return [id_ for id_, _, x, y in sorted(cards, key=lambda c: (c[2], c[3])) if x <= cut]
+    return [(id_, x, y) for id_, _, x, y in sorted(cards, key=lambda c: (c[2], c[3]))
+            if x <= cut]
+
+
+def _lane_order(expand_all=False):
+    return [id_ for id_, _, _ in _lane_cards(_fixture(), expand_all=expand_all)]
 
 
 @unittest.skipUnless(_CHROME, "no Chrome/Chromium installed")
@@ -218,6 +256,48 @@ class TestEntryLaneOrder(unittest.TestCase):
         self.assertEqual([n for n in self.expanded if n in self.collapsed],
                          self.collapsed)
         self.assertEqual(self.expanded[0], "zebra-cli")
+
+
+@unittest.skipUnless(_CHROME, "no Chrome/Chromium installed")
+class TestWrappedLaneBreaksAtTheRootBoundary(unittest.TestCase):
+    """Ordering alone was not enough. A wrapped lane reads as tiers, and the
+    even split cut through the middle of the dispatched commands — so two of
+    them shared a column with the origins and inherited their status."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cards = _lane_cards(_wrapping_fixture())
+        cls.cols = {}
+        for id_, x, y in cls.cards:
+            cls.cols.setdefault(x, []).append((y, id_))
+
+    def test_the_lane_wraps_into_exactly_two_columns(self):
+        """Three origins and seven commands: 1 + ceil(7/7). The break costs no
+        extra column here, which is the common shape."""
+        self.assertEqual(len(self.cols), 2, self.cards)
+
+    def test_the_first_column_is_exactly_the_ways_in(self):
+        first = [id_ for _, id_ in sorted(next(iter(self.cols.values())))]
+        self.assertEqual(first, ["root-cli", "root-cron", "root-installer"])
+
+    def test_the_second_column_is_everything_they_dispatch(self):
+        """And ordered by reach inside it, so the widest subcommand leads."""
+        second = [id_ for _, id_ in sorted(list(self.cols.values())[1])]
+        self.assertEqual(second, [f"sub{i}" for i in (6, 5, 4, 3, 2, 1, 0)])
+
+    def test_the_columns_share_a_top_edge(self):
+        """Centring each column on its own puts the tall column's first card —
+        a dispatched command — above the origin it hangs off, undoing in
+        reading order what the ordering just established."""
+        tops = [min(y for y, _ in col) for col in self.cols.values()]
+        self.assertEqual(len(set(tops)), 1, f"sub-column tops differ: {tops}")
+
+    def test_a_short_lane_still_gets_one_column(self):
+        """The break decides where an existing wrap falls; it does not add one.
+        The four-entry fixture has both roots and non-roots, and a column of
+        four says the same thing top-to-bottom without spending the width."""
+        xs = {x for _, x, _ in _lane_cards(_fixture())}
+        self.assertEqual(len(xs), 1)
 
 
 class TestEntryOrderIsImplementedOnce(unittest.TestCase):

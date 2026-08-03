@@ -120,4 +120,12 @@ is ordered by root-ness — nodes with no inbound edge first, then by how many
 nodes each reaches — instead of by kind. Root-ness is computed once over the
 whole graph with every container collapsed, so expanding something elsewhere
 never reshuffles the reader's anchor, and ghost edges count for neither
-direction. A lane taller than seven cards wraps into sub-columns.
+direction.
+
+A lane taller than seven cards wraps into sub-columns. Where lane 0 wraps, the
+break falls at the root boundary rather than at an even split — a column break
+reads as a boundary, so the first column is the ways in and the rest are what
+they start — and its sub-columns share a top edge instead of each being centred,
+so the origin stays the first card in the lane rather than sitting beside the
+tall column's midpoint. Both only apply when the lane wraps anyway; a short lane
+says the same thing top-to-bottom without spending the width.
