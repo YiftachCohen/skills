@@ -52,5 +52,9 @@ During the walk you can say "I know this part", "back up", "what's a ...?",
   line.
 - Distinguishes what the code does, what it infers, and what it could not
   confirm.
-- Drafts review comments to a local file on request. It never posts to
-  GitHub and never recommends approve or reject unless you ask.
+- Reads the tests to say what they prove; takes pass/fail from CI rather
+  than running anything.
+- Re-reads every `path:line` it cites and checks the notes file with
+  `scripts/check_citations.py` before showing you a location.
+- Never writes to GitHub and never recommends approve or reject unless you
+  ask.

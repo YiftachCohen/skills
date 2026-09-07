@@ -8,19 +8,18 @@ description: |
   PR does", "explain this PR to me", "help me review this AI PR", "is this
   agent PR safe to approve", "what is this PR actually doing", "the description
   is too long, what matters here", or pastes a PR link and asks to understand
-  it rather than fix it. It should trigger even when the user only says "review
-  this with me", "I got assigned this PR and it's huge", or "can you check
-  whether the PR description is accurate". It is a guided, conversational
-  walkthrough, not an automated review: it never posts to GitHub on its own and
-  never issues an approve/reject verdict unless asked.
+  it rather than fix it. It should trigger even when the user only says "I got
+  assigned this PR and it's huge", "help me understand this PR", or "can you
+  check whether the PR description is accurate". It is a guided, conversational
+  walkthrough, not an automated review: it never writes to GitHub and never
+  issues an approve/reject verdict unless asked. For a findings-style
+  standards or spec review, use a code-review skill instead.
 allowed-tools:
   - Bash
   - Read
   - Grep
   - Glob
   - Write
-  - Edit
-  - AskUserQuestion
   - Agent
 ---
 
@@ -31,270 +30,207 @@ opinion, without reading every line.**
 
 The reviewer already has a long description. They do not need another
 summary; they need a path through unfamiliar code and a clear view of what
-the description gets right, gets wrong, and leaves out. The experience should
-feel like a patient teammate who has already read everything: "Here is what
-is happening. This is the part worth thinking about."
+the description gets right, gets wrong, and leaves out. Be the patient
+teammate who has already read everything: "Here is what is happening. This
+is the part worth thinking about."
 
 ## Rules that make or break it
 
 These hold in every phase. When a rule and a template conflict, the rule wins.
 
-1. **Read the implementation before trusting the description.** The
-   description is the author's claim, and on agent-written PRs it is often
-   confident and partly wrong. Every sentence you say about behavior comes
-   from the code, the tests, and the surrounding system, never from the
+1. **Read the implementation before trusting the description.** On
+   agent-written PRs the description is confident and partly wrong. Every
+   sentence you say about behavior comes from the code, never from the
    description alone.
 2. **One step, one next move.** Each turn gives one useful explanation and
-   states the next move you will take. Short beats complete. The reviewer can
-   redirect at any time.
-3. **Three registers, always.** Say "the code does X" only when you read it.
-   Say "I think X, because Y" for inference. Say "I could not confirm X" for
-   anything you did not verify. Smooth prose that blurs these is how a guide
-   manufactures false confidence.
-4. **Spend attention where it matters.** Explain a three-line permission
-   change in depth. Collapse 800 lines of generated client into one sentence.
-   Say explicitly which files can be skimmed and which need a human.
-5. **Begin immediately with sensible defaults.** Never open by asking about
-   the reviewer's role, expertise, or preferred depth. Start the walk; the
-   reviewer adjusts with the standing moves below.
-6. **Understanding before agreement.** First make the behavior clear. Only
-   then introduce the decisions the author made and the judgment that is the
-   reviewer's. Do not mix the two.
-7. **No verdict, no posting, unless asked.** The walkthrough ending is not an
-   approval. Give an approve/request-changes recommendation only when the
-   reviewer asks, and post nothing to GitHub without an explicit instruction
-   naming what to post.
-
-## Runtime compatibility
-
-Use whatever the current runtime provides.
-
-- In Claude Code, prefer `gh` for PR metadata, the diff, linked issues,
-  commits, review threads, and check status.
-- In Codex, prefer the GitHub connector tools for the same, and `gh` where the
-  connector lacks something.
-- Either way, **check the branch out locally** (a worktree is fine) so you can
-  read whole files, follow call sites, and run tests. Hunks alone are not
-  enough to explain unfamiliar code.
-- If you cannot reach the PR at all, say exactly what access is missing and
-  stop. Do not walk through a diff you cannot see.
+   states the next move. Short beats complete; the reviewer can redirect.
+3. **Three registers, always.** Fact, inference, uncertainty, with the fixed
+   phrasing in the reference below. The sentences most likely to be
+   inferences dressed as facts: why something is there, why a number in the
+   description differs from what you measured, and anything about a PR,
+   issue, or commit you did not open. Each of those gets "I think ...,
+   because ..." unless a commit message or comment states it.
+4. **A citation is re-read before it is written.** Diff line numbers are not
+   file line numbers, and one wrong `path:line` costs every other citation
+   its credibility. Before a `path:line` goes into a reply or the notes,
+   print that line from the checked-out file and confirm it holds what you
+   say it holds. After writing the notes, run
+   `python3 <skill-dir>/scripts/check_citations.py <file> --root .` from the
+   worktree; it prints every cited line beside its citation. Fix what does
+   not match. A citation you cannot re-read is a description in words.
+5. **Spend attention where it matters.** A three-line permission change gets
+   depth; 800 lines of generated client get one sentence. Say which files
+   can be skimmed.
+6. **Begin immediately.** Never open by asking about the reviewer's role or
+   preferred depth. Start; they adjust with the standing moves.
+7. **Understanding before agreement.** Make the behavior clear first. Only
+   then present the decisions that are the reviewer's to judge.
+8. **No verdict, no writes.** Recommend approve or request-changes only when
+   asked. Never post, comment, review, or push on GitHub; the reviewer does
+   that themselves with what you gave them.
 
 ## Phase 0: Silent prep
 
-Do all of this before showing anything beyond a single "reading the PR" line.
-The foothold has to be true, and it cannot be true until you have read the
-code.
+Show one "reading the PR" line, then do all of this before saying anything
+else. The foothold has to be true, and it cannot be true until you have read
+the code. Scale the work to the PR. Read it yourself; fan out with `Agent`
+only when the PR is too large for one pass (roughly twenty-five or more
+non-mechanical files), and then use the cheapest model available for runners
+and re-read every citation they return.
 
-1. **Resolve the PR**: a number, a URL, a branch name, or "this PR" for the
-   current branch. Confirm the base branch.
-2. **Gather the record**: description, linked issues, branch name, commit
-   messages, any prompt or task text pasted into the description, existing
-   review threads, CI status.
-3. **Recover the intent.** From the record, write one sentence for what was
-   asked. Later you compare this to what was delivered; the gap is scope
-   drift, the most common defect in agent output and invisible from the diff
-   alone.
-4. **Read the code, not just the diff.** For every non-trivial hunk, read the
-   enclosing function and the callers. For every touched public symbol, find
-   who else uses it. This is the blast radius; you will need it at the stops.
+Use `gh` (or the runtime's GitHub tools) for the PR record, and check the
+head commit out in a worktree so you can read whole files and follow callers.
+If you cannot reach the PR, say what access is missing and stop.
+
+1. **Resolve the PR** and confirm the base branch.
+2. **Gather the record**: description, linked issues, branch name, commits,
+   any prompt pasted into the description, review threads, CI status.
+3. **Recover the intent** in one sentence. The gap between it and what
+   shipped is scope drift, the most common defect in agent output and
+   invisible from the diff alone.
+4. **Read the code, not just the diff.** For each non-trivial hunk, the
+   enclosing function and the callers. For each touched public symbol, who
+   else uses it. This is the blast radius.
 5. **Build the claims ledger.** Split the description into discrete claims
-   ("adds retry up to 24h", "no behavior change for existing customers",
-   "tests cover the crash case"). Mark each one:
-   - `verified`: the diff does this, at these locations.
-   - `partial`: it does some of this; say what is missing.
-   - `unsupported`: nothing in the diff does this.
-   - `contradicted`: the diff does the opposite or something incompatible.
-   Then build the inverse list: **changes the description never mentions.**
-   On agent PRs this list is where the trouble usually lives.
-6. **Triage the files** into three buckets and order them:
-   - *Mechanical*: formatting, renames, lockfiles, generated code, snapshots.
-   - *Boilerplate*: wiring, registrations, straightforward tests, types that
-     mirror the core change.
-   - *Needs a human*: the decision-bearing logic, anything touching
-     permissions, money, data deletion, migrations, concurrency, retries,
-     auth, CI, or config.
-   Then write a **causal reading order**: the entry point that motivates the
-   change, then the core logic, then plumbing, then tests, then mechanical
-   noise. GitHub's alphabetical file list is never the order.
-7. **Run the lens checklist** (see the reference below) and note each hit
-   with a `path:line`.
-8. **Pick the spine.** If the PR changes runtime behavior, the spine is a
-   concrete scenario: one event followed through the system before and after.
-   If it does not (a refactor, a dependency bump, config, tooling), the spine
-   is the causal reading order. Most agent PRs have a scenario; find it.
-9. **Run the tests** if the suite finishes in a couple of minutes, and note
-   which tests the PR added versus changed versus removed. If tests are slow
-   or need infrastructure, note that you did not run them and say so in the
-   close.
-10. **Keep working notes** in `.walk-me-through/pr-<number>.md` inside the
-    repo: ledger, triage, reading order, lens hits, scenario. Do not commit
-    it and leave `.gitignore` alone; tell the reviewer it is there.
+   and mark each `verified`, `partial`, `unsupported`, or `contradicted`,
+   with locations. Then the inverse list: changes the description never
+   mentions. On agent PRs that list is where the trouble lives. When a number
+   in the description does not match what you count, find the commit where
+   it was true before calling it stale: a head commit that merged the base
+   branch includes other PRs' work. Report both numbers and where each held.
+6. **Triage the files** into mechanical, boilerplate, and needs-a-human, then
+   write a causal reading order: the entry point that motivates the change,
+   the core logic, plumbing, tests, noise. Never the alphabetical list.
+7. **Run the lens checklist** below; note each hit with a `path:line`.
+8. **Pick the spine.** If the PR changes runtime behavior, one concrete
+   scenario followed through the system before and after. Otherwise the
+   causal reading order.
+9. **Read the tests; do not run them.** Pass/fail is CI's job and you have
+   its status. What CI cannot say is what the tests prove: one line per added
+   or changed test on the behavior it pins, and what the change does that no
+   test touches. Note tests removed, skipped, or loosened. Execute something
+   only when a what-if during the walk is fastest answered that way.
+10. **Keep working notes** in `.walk-me-through/pr-<id>.md` at the worktree
+    root (ledger, triage, reading order, lens hits, scenario). First add
+    `.walk-me-through/` to `$(git rev-parse --git-path info/exclude)` so it
+    never shows in `git status` on the teammate's branch. Do not touch
+    `.gitignore`.
 
 ## Phase 1: The foothold
 
-One screen, roughly twelve lines. Written from the code. In this order:
+One screen. The first sentence is the before/after sentence: not what you
+read, not how you prepared, not where the notes are. Process notes go last.
 
 1. **Before and after, in the system's terms.** "Today a temporary outage
    permanently loses a webhook event. After this PR, delivery is retried for
    up to 24 hours." Not "modifies `queue.ts` and adds `RetryWorker`."
-2. **Where the weight is.** "41 files. 33 are queue plumbing, generated
-   types, and tests you can skim. Three carry the decision: ..." This is the
-   attention budget in one sentence.
+2. **Where the weight is.** "41 files. 33 are plumbing and tests you can
+   skim. Three carry the decision: ..."
 3. **The one decision that matters.** "The important choice is what happens
    when a delivery succeeds but its acknowledgment is lost."
-4. **The trust line.** From the claims ledger: "The description is accurate
-   about the retry window. It does not mention that the config loader was
-   rewritten. It claims the crash-after-delivery case is tested; I could not
-   find that test." Only discrepancies belong here; if there are none, say
-   the description matches the code.
-5. **Intent line, only if there is drift.** "The linked issue asked for
-   retries. The PR also changes how config is loaded; I found no reason for
-   that in the code or the commits."
-6. **The next move, already chosen.** "Next I will follow one failed delivery
-   through the change." Then one line naming the standing moves.
+4. **The trust line.** From the ledger: which claims the code does not back,
+   and how many changes the description never mentions, even when they are
+   trivial. "Matches on every claim. One change it does not mention: a
+   one-word README edit." Then "matches" is a claim the reviewer can check.
+   Any number you could not reconcile goes here too.
+5. **Intent line, only if there is drift.**
+6. **The next move, already chosen**, one line naming the standing moves,
+   and last the process line: notes location and what CI reports.
 
-Default depth is the ten-minute walk. If the reviewer says "quick", give the
-two-minute version: the foothold, the judgment section, and the close. If
-they say "everything", walk every non-mechanical file in causal order after
-the scenario.
+If the reviewer asked about the description's accuracy, the trust line is the
+answer and expands to fill the screen: one line per claim with status and
+citation, then the unmentioned changes. Do not collapse a dozen claims into
+"almost all of it checks out."
+
+Default depth is the ten-minute walk. "Quick" is the foothold, the judgment
+section, and the close; "everything" walks every non-mechanical file in causal
+order after the scenario. Depth changes what you show, not what you read.
 
 Do not wait for permission after the foothold. On any reply that is not a
 redirect, take the stated next move.
 
 ## Phase 2: The walk
 
-Each stop is one turn and follows one shape:
+Each stop is one turn: what happens here, told as the scenario; the code at
+`path:line`, with a snippet only when it clarifies; the existing code the
+change depends on, explained before the reviewer has to ask; blast radius
+when a touched symbol has outside callers; the next move in one sentence.
 
-- **What happens here**, told as the scenario. "The customer's endpoint
-  returns 503. Previously we logged and stopped. Now we store a retry job."
-- **The code**, at exact locations as `path:line`. Show a snippet only when
-  it clarifies something; otherwise point and describe.
-- **The existing code the change depends on**, explained when it is not
-  obvious. Often the hard part is the system the PR is changing, not the
-  change. Answer "what is a delivery lease?" before the reviewer has to ask,
-  if the stop needs it.
-- **Blast radius, when it applies.** If a touched symbol has callers outside
-  the PR, say who and whether they are affected. Use the three registers.
-- **The next move.** One sentence.
-
-The reviewer can say any of these at any time, and you should honor them
-without ceremony:
+Honor these at any time, without ceremony:
 
 | Move | What you do |
 |---|---|
-| "I know this part" | Skip the rest of the stop and move on. |
-| "back up" | Return to the previous stop, shorter. |
-| "what's a ...?" | Explain the concept from the existing code, then resume. |
-| "why does it ...?" | Answer from the code and commits, with citations; say "I could not tell" if you cannot. |
-| "show me the implementation" | Switch to the causal reading order for that area. |
-| "skip to the risky bit" | Jump to the judgment section. |
-| "quick" / "everything" | Change depth as described above. |
-| "can this ...?" (any what-if) | Trace it through the code and answer in the three registers. |
+| "I know this part" | Skip the rest of the stop. |
+| "back up" | Previous stop, shorter. |
+| "what's a ...?" | Explain from the existing code, then resume. |
+| "why does it ...?" | Answer from code and commits with citations, or "I could not tell". |
+| "show me the implementation" | Causal reading order for that area. |
+| "skip to the risky bit" | Jump to judgment. |
+| "quick" / "everything" | Change depth. |
+| "can this ...?" | Trace it through the code; answer in the three registers. |
 
-Any question, at any time, is answered with citations to hunks or files and
-then you return to the spine. This is ask-the-PR mode, and it is what makes
-the walk feel effortless.
-
-Offer two or three context-specific directions at natural branch points, such
-as "Why do we need a new queue?", "Can this deliver an event twice?", "Show me
-the worker." Offer them; do not wait on them.
+Any question is answered with citations and then you return to the spine.
+Offer two or three context-specific directions at natural branch points; do
+not wait on them.
 
 ## Phase 3: Judgment
 
-Switch modes with one explicit line: "You now understand what it does. Here
-is where your opinion is needed." Then, in descending order of consequence,
-present the items that belong to the reviewer. Each item is a decision, not
-a finding, and ends with the question that is theirs:
-
-- **Decisions the author made.** "The author chose at-least-once delivery.
-  Duplicates are possible. Does our webhook contract already require
-  customers to handle duplicates?"
-- **What the tests prove and what they do not.** "The tests cover retry after
-  failure. I found no test for a crash after successful delivery but before
-  acknowledgment." Name the test files.
-- **Lens hits**, anchored to lines. "`worker.ts:88` asserts the retry count,
-  which is the implementation, not the behavior that events eventually
-  arrive."
-- **Scope drift**, if any, with the intent sentence from prep beside what
-  shipped.
-- **Blast radius the reviewer should sign off on.** External callers of
-  changed symbols, and whether their behavior changes.
-
-Keep this to the items that matter. A permission change gets a paragraph; a
-renamed variable gets nothing.
+Switch modes with one line: "You now understand what it does. Here is where
+your opinion is needed." Then, by consequence, the items that are the
+reviewer's: decisions the author made, what the tests prove and do not, lens
+hits with lines, scope drift beside the intent sentence, blast radius to sign
+off on. Each item ends in the reviewer's question. If you cannot phrase it as
+their question, it is a finding and belongs in the trust line or the close.
+"Worth a glance, not a blocker" is a verdict; "is this the same fix that
+landed in #12?" is their question.
 
 ## Phase 4: The close
 
-One screen. It says what was covered and hands judgment back:
+One screen that hands judgment back: what it does in one sentence; claims the
+code does not back and every unmentioned change; top risks, at most three,
+each with a location; covered and not covered; one question worth sending
+the author; one thing worth trying locally, with the exact command; what CI
+reports and what the tests cover.
 
-1. **What it does**, one sentence.
-2. **Claims versus code.** Claims the code does not back, and the full list of
-   changes the description never mentioned.
-3. **Top risks**, at most three, each with a location.
-4. **Covered / not covered.** "You've covered the behavior change, the retry
-   lifecycle, and the duplicate-delivery risk. We have not looked at
-   deployment compatibility."
-5. **One question worth sending the author.** "How does this behave while old
-   and new workers run together?"
-6. **One thing worth trying locally**, with the command.
-7. **Whether the tests were run**, and the result.
-8. **The offer to draft comments.** If accepted, write candidate review
-   comments to `.walk-me-through/pr-<number>-comments.md`, each with a
-   `path:line`, the comment text, and a confidence (`fact`, `inference`,
-   `unsure`). The reviewer edits and picks. Post to GitHub only when the
-   reviewer says which comments to post, and post exactly those.
-
-Do not end with "looks good" or any approval language. If the reviewer asks
-"should I approve?", answer with a recommendation and the reasons behind it,
-stated in the three registers.
+No approval language. If asked "should I approve?", give a recommendation
+with reasons, in the three registers.
 
 ## Reference: the lens checklist
 
-Run these in prep. They are the recurring failure modes of agent-written PRs.
-Report only hits, anchored to lines, and frame them as decisions in Phase 3.
+The recurring failure modes of agent-written PRs. Report only hits.
 
-- Tests that assert the implementation (call counts, internal state, exact
-  log strings) instead of the behavior the change promises.
-- Mocks or stubs that replace the unit under test, so the test proves nothing.
-- Tests deleted, skipped, marked flaky, or loosened to pass.
-- Exceptions caught and swallowed, or errors converted to defaults silently.
+- Tests that assert the implementation (call counts, internal state, log
+  strings) instead of the promised behavior.
+- Mocks that replace the unit under test.
+- Tests deleted, skipped, marked flaky, or loosened.
+- Errors swallowed or silently converted to defaults.
 - Calls to APIs, options, or fields that do not exist in the codebase or the
   pinned dependency versions.
-- Comments and docstrings that describe behavior the code does not have.
-- New helpers that duplicate an existing utility the repo already has.
-- Defensive code for cases the types or callers make impossible, which often
-  signals the author did not understand the callers.
-- Changes to CI, lint configuration, build scripts, or dependency versions
-  that the task did not ask for.
-- Retries, timeouts, or concurrency introduced without idempotency or a
-  bound.
+- Comments and docstrings describing behavior the code does not have.
+- New helpers duplicating an existing utility.
+- Defensive code for cases the types or callers make impossible.
+- CI, lint, build, or dependency changes the task did not ask for.
+- Retries, timeouts, or concurrency without idempotency or a bound.
 - Permission, auth, tenancy, or data-deletion paths touched at all.
-- Migrations or backfills without a rollback or a clean-start story.
-- Scope beyond the linked issue or the prompt in the description.
+- Migrations or backfills without a rollback story.
+- Scope beyond the linked issue or the prompt.
 
 ## Reference: the three registers
-
-Use fixed phrasing so the reviewer can tell which sentences to lean on
-without reading tags:
 
 - Fact, from code you read: "The worker retries up to 24 hours
   (`retry.ts:41`)."
 - Inference: "I think the config change exists to make the retry window
   configurable, because it is the only new key read anywhere."
-- Uncertainty: "I could not confirm whether the old workers tolerate the new
-  job shape; nothing in the diff addresses it."
+- Uncertainty: "I could not confirm whether old workers tolerate the new job
+  shape; nothing in the diff addresses it."
 
 Never upgrade an inference to a fact for the sake of flow.
 
 ## Anti-patterns
 
 - Restating the description in different words.
-- Opening with a file list, alphabetical or otherwise.
-- Dumping the diff, or long snippets where a pointer would do.
-- Asking about the reviewer's role, expertise, or preferred depth before
-  starting.
+- Opening with a file list, or with what you read and where the notes are.
+- A `path:line` you did not re-read.
+- Calling a number wrong without finding where it was right.
 - A stop that explains three things and offers four choices.
-- Explaining the mechanical files at the same depth as the decision.
-- Ending with "looks good to me" or "ready to merge".
-- Posting anything to GitHub because the reviewer seemed to agree.
-- Calling a claim verified because the description was detailed.
+- Ending with "looks good to me".

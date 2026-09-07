@@ -15,7 +15,7 @@
     },
     {
       "id": 3,
-      "prompt": "I know this part, skip ahead. Actually, can this deliver the same event twice?",
+      "prompt": "We're mid-walk on PR #418 (webhook retry). You just explained the stop where the worker stores a retry job in queue.ts. I know this part, skip ahead. Actually, before you do: can this deliver the same event twice?",
       "expected_output": "Mid-walk, the skill honors the standing move by dropping the current stop, then answers the what-if by tracing the code path with citations, stating what the code does, what it infers, and what it could not confirm. It then returns to the spine with one stated next move instead of restarting or lecturing.",
       "files": []
     },
@@ -33,20 +33,14 @@
     },
     {
       "id": 6,
-      "prompt": "ok I get what it does now. what should I actually worry about?",
+      "prompt": "You walked me through PR #418 (webhook retry, at-least-once worker, new config loader). ok I get what it does now. what should I actually worry about?",
       "expected_output": "The skill switches modes with an explicit line separating understanding from agreement, then presents the author's decisions, what the tests prove and do not, lens-checklist hits anchored to lines (tests asserting implementation, swallowed errors, mocked unit under test, etc.), and blast radius on external callers. Each item ends with the question that belongs to the reviewer; none are phrased as a verdict.",
       "files": []
     },
     {
-      "id": 7,
-      "prompt": "that was helpful, we're done. Post the comments about the missing crash test and the duplicate-delivery risk.",
-      "expected_output": "The skill's close listed what was covered and not covered, one question for the author, one thing to try locally, and whether tests were run, with no approval language. It drafted comments to a local file with path:line and confidence labels. On this explicit instruction it posts exactly the two named comments and nothing else.",
-      "files": []
-    },
-    {
       "id": 8,
-      "prompt": "so should I approve it?",
-      "expected_output": "Only because the reviewer asked, the skill gives a recommendation (approve or request changes) with reasons in the three registers, citing the ledger discrepancies and lens hits. It never volunteered this earlier and does not click approve itself.",
+      "prompt": "You just closed the walkthrough of PR #418: the description claimed the crash case was tested and it is not, the config loader was rewritten without being mentioned, and worker.ts:88 asserts a retry count instead of delivery. so should I approve it?",
+      "expected_output": "Only because the reviewer asked, the skill gives a recommendation (approve or request changes) with reasons in the three registers, citing the ledger discrepancies and lens hits. It never volunteered this earlier and does not write anything to GitHub.",
       "files": []
     },
     {
@@ -54,6 +48,76 @@
       "prompt": "quick version of #302, I have two minutes before standup.",
       "expected_output": "The skill still does full silent prep, then delivers only the foothold, the judgment items, and the close, skipping the scenario stops. The trust line and unmentioned-changes list are not dropped for brevity.",
       "files": []
+    },
+    {
+      "id": 10,
+      "name": "full-walk-pr9",
+      "prompt": "walk me through PR #9 in this repo. A teammate's agent opened it, the description is long, and I have no context on the atlas skill's scripts.",
+      "expected_output": "full walkthrough foothold on a real merged PR (fixture: YiftachCohen/skills, run from a checkout of that repo)",
+      "files": [],
+      "expectations": [
+        "response.md contains at least one path:line citation, and every path:line citation in response.md points to a real file in the PR head commit whose cited line contains what the response says it does",
+        "Every path:line citation in the working notes file (pr-N.md) resolves to matching content at the PR head commit; sample all of them, not some",
+        "response.md states an attention budget: how many files can be skimmed versus which specific files carry the decision",
+        "response.md names one decision as the most important thing in the PR, phrased as a design choice rather than a file",
+        "response.md contains a trust line comparing the description to the code that names the root README.md edit as a change the description never mentions, or explicitly states the description matches the code and lists no discrepancies",
+        "response.md ends with one stated next move (a scenario to follow) and names the standing moves the reviewer can use",
+        "response.md is at most 40 lines",
+        "A working notes file (pr-9.md) was saved with a claims ledger marking each description claim as verified, partial, unsupported, or contradicted",
+        "The transcript shows files were read at the PR head commit (worktree checkout or git show), not only the diff",
+        "response.md contains no approval or merge-readiness language (no 'looks good', 'LGTM', 'ready to merge', 'safe to approve')",
+        "response.md does not ask the reviewer about their role, expertise, or preferred depth before delivering content",
+        "response.md does not open with a file list or a restatement of the PR description; the first sentence describes system behavior before and after the change",
+        "response.md distinguishes fact, inference, and uncertainty using explicit phrasing ('I think ... because', 'I could not confirm') at least once each, or has no inferences or uncertainties at all",
+        "response.md makes no factual claim about another PR, issue, or commit that is false when checked with gh (e.g. calling two PRs same-titled when they are not); such statements are either correct or marked as inference",
+        "The first sentence of response.md describes system behavior before and after the change; any mention of the notes file, prep, or tests run appears in the last line only"
+      ]
+    },
+    {
+      "id": 11,
+      "name": "claims-ledger-pr8",
+      "prompt": "is the description on PR #8 in this repo actually accurate? It's an agent PR and it claims a lot. I want to know what it says that the code doesn't back up, and what it changed that it doesn't mention.",
+      "expected_output": "claims ledger on a real merged PR (fixture: YiftachCohen/skills, run from a checkout of that repo)",
+      "files": [],
+      "expectations": [
+        "response.md contains at least one path:line citation, and every path:line citation in response.md points to a real file in the PR head commit whose cited line contains what the response says it does",
+        "Every path:line citation in the working notes file (pr-N.md) resolves to matching content at the PR head commit; sample all of them, not some",
+        "response.md lists the description's claims individually, each with a status of verified, partial, unsupported, or contradicted",
+        "response.md lists changes the description never mentions and that list includes the MIT LICENSE file and the .gitignore change (plans/)",
+        "response.md checks the '63 tests' claim by counting tests in the PR head commit (not by running them) and reports the result",
+        "Every claim marked verified or contradicted cites a path:line or file",
+        "response.md is at most 60 lines",
+        "A working notes file (pr-8.md) was saved containing the claims ledger",
+        "response.md contains no approval or merge-readiness language (no 'looks good', 'LGTM', 'ready to merge', 'safe to approve')",
+        "response.md does not ask the reviewer about their role, expertise, or preferred depth before delivering content",
+        "response.md does not open with a file list or a restatement of the PR description; the first sentence describes system behavior before and after the change",
+        "response.md distinguishes fact, inference, and uncertainty using explicit phrasing ('I think ... because', 'I could not confirm') at least once each, or has no inferences or uncertainties at all",
+        "response.md makes no factual claim about another PR, issue, or commit that is false when checked with gh (e.g. calling two PRs same-titled when they are not); such statements are either correct or marked as inference",
+        "The first sentence of response.md describes system behavior before and after the change; any mention of the notes file, prep, or tests run appears in the last line only"
+      ]
+    },
+    {
+      "id": 12,
+      "name": "quick-pr11",
+      "prompt": "quick version of PR #11 in this repo, I have two minutes before standup and have never looked at the atlas tours code.",
+      "expected_output": "two-minute version on a real merged PR (fixture: YiftachCohen/skills, run from a checkout of that repo)",
+      "files": [],
+      "expectations": [
+        "response.md contains at least one path:line citation, and every path:line citation in response.md points to a real file in the PR head commit whose cited line contains what the response says it does",
+        "Every path:line citation in the working notes file (pr-N.md) resolves to matching content at the PR head commit; sample all of them, not some",
+        "response.md delivers a foothold, a judgment section, and a close, and contains no scenario walk stops",
+        "response.md contains a trust line that names test_lanes.py or the lane/entry-point fix as a change the description never mentions",
+        "response.md's judgment items are phrased as questions for the reviewer, not verdicts",
+        "response.md's close includes what was covered and not covered, one question for the author, one thing to try locally with a command, and what CI reports plus what the added tests cover",
+        "response.md is at most 60 lines",
+        "response.md reports whether the 111-test claim was reconciled (by counting, not by running) and the result",
+        "response.md contains no approval or merge-readiness language (no 'looks good', 'LGTM', 'ready to merge', 'safe to approve')",
+        "response.md does not ask the reviewer about their role, expertise, or preferred depth before delivering content",
+        "response.md does not open with a file list or a restatement of the PR description; the first sentence describes system behavior before and after the change",
+        "response.md distinguishes fact, inference, and uncertainty using explicit phrasing ('I think ... because', 'I could not confirm') at least once each, or has no inferences or uncertainties at all",
+        "response.md makes no factual claim about another PR, issue, or commit that is false when checked with gh (e.g. calling two PRs same-titled when they are not); such statements are either correct or marked as inference",
+        "The first sentence of response.md describes system behavior before and after the change; any mention of the notes file, prep, or tests run appears in the last line only"
+      ]
     }
   ]
 }
