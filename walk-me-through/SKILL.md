@@ -70,7 +70,8 @@ A foothold has enough context to stand alone. Usually a few short paragraphs
   need a compact map; do not invent one unifying story or a risk for a trivial PR.
 - **A material caveat, if needed.** Surface a description discrepancy or
   unchecked area when it affects this explanation or the review decision.
-  Keep minor omissions and administrative details in notes.
+  A caveat names what is unverified; it never certifies the rest. Keep minor
+  omissions and administrative details in notes.
 
 This is a complete small explanation, not a teaser followed by "continue?".
 For a longer requested walk, deepen it in the same turn or at the user's pace.
@@ -94,7 +95,7 @@ consequential uncertainty. The reviewer need not keep typing "continue".
 
 If asked whether the description gives the wrong picture during a walk,
 explain the material mismatches and actual behavior. Accounting for every
-claim and omission is a separate task: use `pr-description-audit` when
+claim and omission is a separate task: use `pr-audit` when
 available and explicitly requested. An ordinary walk never starts that audit
 automatically or requires the companion skill.
 
@@ -148,7 +149,8 @@ already serves as the close. Let the reviewer decide whether they understand.
 - Before writing a `path:line`, re-read that line at the pinned revision and
   confirm it supports the claim. Identify base-revision citations explicitly;
   ordinary citations refer to head. If no stable line can be verified, describe
-  the location in words. Re-read any citations returned by another agent.
+  the location in words; an approximate line reference is not a citation.
+  Re-read any citations returned by another agent.
 - Record notes when the investigation benefits from them in
   `.walk-me-through/pr-<id>.md` in the worktree; first add `.walk-me-through/`
   to the file returned by `git rev-parse --git-path info/exclude`. Preserve
@@ -161,7 +163,8 @@ already serves as the close. Let the reviewer decide whether they understand.
   with `git show` if no matching worktree exists.
 - Keep the full investigation behind the explanation. Never claim the whole
   description matches, all callers are safe, or an area can be skipped beyond
-  the scope actually checked. Expose consequential gaps plainly.
+  the scope actually checked. Finding no mismatch in what you read is not the
+  description checking out: say what you compared. Expose gaps plainly.
 - Explain tradeoffs and prioritize attention freely. Recommend approve or
   request-changes only when asked, with reasons and remaining uncertainty.
   Leave PR source code untouched locally and remotely. Never post, comment,

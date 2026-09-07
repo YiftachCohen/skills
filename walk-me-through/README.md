@@ -68,7 +68,7 @@ It can use isolated checkouts and local notes. It leaves PR code and GitHub
 untouched, and recommends approval or changes only when you ask.
 
 For a complete inventory of verified claims and unmentioned changes, use the
-separate `pr-description-audit` skill. It is independently installable; an
+separate `pr-audit` skill. It is independently installable; an
 ordinary walkthrough does not need it or launch it automatically.
 
 The quality bar is simple: after the opening, you can explain what changes,
