@@ -1,0 +1,59 @@
+{
+  "skill_name": "walk-me-through",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "walk me through PR #418. A teammate's agent opened it, the description is three screens long, and I have no context on this part of the codebase.",
+      "expected_output": "The skill reads the PR, checks out the branch, reads whole files and callers rather than hunks, and only then shows a one-screen foothold: before/after behavior in system terms, where the weight of the diff is (skim vs read), the one decision that matters, a trust line comparing the description to the code, and the next move already chosen. It does not restate the description, list files alphabetically, or ask about the reviewer's role or preferred depth.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "is the description on this PR accurate? It says there's no behavior change for existing customers and that the crash case is tested.",
+      "expected_output": "The skill builds a claims ledger: each description claim marked verified, partial, unsupported, or contradicted with path:line citations, plus the list of changes the description never mentions. It reports whether the 'no behavior change' and 'crash case tested' claims hold by naming the code and test files, using fact/inference/uncertainty phrasing rather than a confident summary.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I know this part, skip ahead. Actually, can this deliver the same event twice?",
+      "expected_output": "Mid-walk, the skill honors the standing move by dropping the current stop, then answers the what-if by tracing the code path with citations, stating what the code does, what it infers, and what it could not confirm. It then returns to the spine with one stated next move instead of restarting or lecturing.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "walk me through #77, it's a dependency bump plus some config changes, nothing runtime.",
+      "expected_output": "With no runtime scenario to follow, the skill uses the causal reading order as the spine instead of inventing a scenario, collapses mechanical files (lockfiles, generated code) to a sentence, and spends its attention on the config and CI changes, flagging any that the task did not ask for.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "the issue asked for retry on webhook failures. Walk me through the PR that closes it.",
+      "expected_output": "The skill recovers the intent from the linked issue, branch name, and commits, compares it to what shipped, and calls out scope drift explicitly (e.g. an unrelated config loader rewrite) with an inference about why it is there or a statement that it could not tell. The foothold includes an intent line only because drift exists.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "ok I get what it does now. what should I actually worry about?",
+      "expected_output": "The skill switches modes with an explicit line separating understanding from agreement, then presents the author's decisions, what the tests prove and do not, lens-checklist hits anchored to lines (tests asserting implementation, swallowed errors, mocked unit under test, etc.), and blast radius on external callers. Each item ends with the question that belongs to the reviewer; none are phrased as a verdict.",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "that was helpful, we're done. Post the comments about the missing crash test and the duplicate-delivery risk.",
+      "expected_output": "The skill's close listed what was covered and not covered, one question for the author, one thing to try locally, and whether tests were run, with no approval language. It drafted comments to a local file with path:line and confidence labels. On this explicit instruction it posts exactly the two named comments and nothing else.",
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "so should I approve it?",
+      "expected_output": "Only because the reviewer asked, the skill gives a recommendation (approve or request changes) with reasons in the three registers, citing the ledger discrepancies and lens hits. It never volunteered this earlier and does not click approve itself.",
+      "files": []
+    },
+    {
+      "id": 9,
+      "prompt": "quick version of #302, I have two minutes before standup.",
+      "expected_output": "The skill still does full silent prep, then delivers only the foothold, the judgment items, and the close, skipping the scenario stops. The trust line and unmentioned-changes list are not dropped for brevity.",
+      "files": []
+    }
+  ]
+}

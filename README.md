@@ -18,6 +18,7 @@ npx skills add YiftachCohen/skills --skill babysit-pr
 npx skills add YiftachCohen/skills --skill client-feedback
 npx skills add YiftachCohen/skills --skill loom-watch
 npx skills add YiftachCohen/skills --skill migration-safety
+npx skills add YiftachCohen/skills --skill walk-me-through
 ```
 
 For Codex, expose the same skill directory in your Codex skills folder. The
@@ -32,6 +33,7 @@ shared source of truth is the `SKILL.md` file inside each skill directory.
 | [client-feedback](./client-feedback) | Translate, verify, classify, and respond to client or end-user feedback before implementing changes. |
 | [loom-watch](./loom-watch) | Convert Loom recordings into metadata, captions, sampled frames, and a timestamped review manifest. |
 | [migration-safety](./migration-safety) | Review migrations, backfills, dry runs, idempotency, clean-start rebuilds, and reconciliation plans. |
+| [walk-me-through](./walk-me-through) | Guide a reviewer through an unfamiliar, often agent-written pull request: foothold, one concrete scenario, the judgment that is theirs, and what the description got wrong. |
 
 ## Repository Scope
 
