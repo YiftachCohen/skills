@@ -28,12 +28,8 @@ understand. The first answer must be useful even if they never reply.
 
 ## Start with a verified foothold
 
-Send one brief reading-the-PR note separately. The next user-facing message is
-the first verified useful explanation. During a long operation, send further
-progress only when needed; each update is one sentence stating an actual
-discovery or consequential uncertainty. Omit tool counts, commands, commit IDs,
-and note housekeeping from progress. Begin without asking about role, expertise,
-or preferred depth.
+The first user-facing message is the verified explanation itself. Begin
+without asking about role, expertise, or preferred depth.
 
 1. Resolve the PR using `gh`, the runtime's GitHub tools, or a supplied local
    PR record. Pin the base and head commits and inspect the full diff shape.
@@ -75,8 +71,8 @@ A foothold has enough context to stand alone. Usually a few short paragraphs
 
 This is a complete small explanation, not a teaser followed by "continue?".
 For a longer requested walk, deepen it in the same turn or at the user's pace.
-The final answer stands alone, incorporates what was learned, and does not
-replay progress notes. For a quick request, the foothold can be the entire
+The final answer stands alone and incorporates what was learned. For a
+quick request, the foothold can be the entire
 answer, including any consequential uncertainty. Match investigation depth to
 the requested scope; never imply that a quick account is a completed audit.
 
@@ -95,9 +91,7 @@ consequential uncertainty. The reviewer need not keep typing "continue".
 
 If asked whether the description gives the wrong picture during a walk,
 explain the material mismatches and actual behavior. Accounting for every
-claim and omission is a separate task: use `pr-audit` when
-available and explicitly requested. An ordinary walk never starts that audit
-automatically or requires the companion skill.
+claim and omission is a separate task; an ordinary walk never starts it.
 
 Carry one scenario through the explanation. At each useful stop, connect what
 happens, the existing behavior it depends on, and why the change matters.
@@ -156,11 +150,8 @@ already serves as the close. Let the reviewer decide whether they understand.
   to the file returned by `git rev-parse --git-path info/exclude`. Preserve
   existing exclusions and leave `.gitignore` alone. Include inspected scope, unchecked areas,
   base/head IDs, and relevant evidence. Notes are optional for a compact walk.
-  For saved head-revision citations, run
-  `python3 <skill-dir>/scripts/check_citations.py <file> --root <head-worktree>`
-  and inspect the printed content; the script checks locations, not meaning.
-  Keep base references separate and verify them against base. Verify in-place
-  with `git show` if no matching worktree exists.
+  Citations saved in notes follow the same re-read rule as citations in the
+  answer; verify with `git show` if no matching worktree exists.
 - Keep the full investigation behind the explanation. Never claim the whole
   description matches, all callers are safe, or an area can be skipped beyond
   the scope actually checked. Finding no mismatch in what you read is not the

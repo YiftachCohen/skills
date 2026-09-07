@@ -29,7 +29,7 @@ Keep harmless omissions and bookkeeping out of the walkthrough. If a number
 matters, state what you measured at the pinned revision; label its origin
 unresolved unless verified. Attribute motives and historical causes only to
 sources you actually opened. The explanation needs a faithful account of the
-change; a complete claim inventory belongs to the separate description audit.
+change, not a complete claim inventory.
 
 ## Look for consequential surprises
 
