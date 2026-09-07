@@ -48,7 +48,11 @@ available, explain what they establish and name what access would resolve.
 
 ## The foothold
 
-A few short paragraphs that stand alone, not a teaser followed by "continue?":
+A few short paragraphs that stand alone, not a teaser followed by "continue?".
+Keep the investigation behind the explanation: what you verified shows up as
+confidence and specific caveats, not as a log of counts, sweeps, and checks.
+Every fact in the story stays exact; shorten by leaving bookkeeping out, not
+by compressing facts together. Say what was not checked in one sentence.
 
 - **The system's job and the change.** The affected part in everyday product
   terms, then before/after behavior and the problem addressed. Explain a
@@ -59,7 +63,7 @@ A few short paragraphs that stand alone, not a teaser followed by "continue?":
 - **Where to focus and why.** The most consequential choice, its practical
   consequence, and one or two code anchors. Call an area skimmable only after
   inspecting it. Several independent changes get a compact map; do not invent
-  one unifying story, or a risk for a trivial PR.
+  one unifying story, or a risk or a verdict for a trivial PR.
 - **A material caveat, if needed.** A description discrepancy or unchecked
   area that affects the explanation or the review decision. A caveat names
   what is unverified; it never certifies the rest. Minor omissions and
