@@ -1,19 +1,11 @@
 ---
 name: walk-me-through
 description: |
-  Guide a reviewer through a pull request they do not understand, typically one
-  a teammate opened with a coding agent, until they know enough to have an
-  opinion without reading every line. Use this skill whenever the user says
-  "walk me through this PR", "walk me through #123", "I have no idea what this
-  PR does", "explain this PR to me", "help me review this AI PR", "is this
-  agent PR safe to approve", "what is this PR actually doing", "the description
-  is too long, what matters here", or pastes a PR link and asks to understand
-  it rather than fix it. It should trigger even when the user only says "I got
-  assigned this PR and it's huge", "help me understand this PR", or "can you
-  check whether the PR description is accurate". It is a guided, conversational
-  walkthrough, not an automated review: it never writes to GitHub and never
-  issues an approve/reject verdict unless asked. For a findings-style
-  standards or spec review, use a code-review skill instead.
+  Make an unfamiliar pull request understandable: explain the missing context,
+  what changes, and where the reviewer's judgment matters. Use when the user
+  asks to be walked through a PR, is overwhelmed by a large or AI-written diff,
+  or wants to understand a PR before approving it. Explain material mismatches
+  with the description as part of the story.
 allowed-tools:
   - Bash
   - Read
@@ -25,212 +17,172 @@ allowed-tools:
 
 # Walk me through
 
-One promise: **the reviewer understands this PR well enough to have an
-opinion, without reading every line.**
+**Turn an unfamiliar PR into a small, understandable story. Give the reviewer
+their bearings early, carry the background context for them, and bring them
+to the few choices that deserve their judgment.**
 
-The reviewer already has a long description. They do not need another
-summary; they need a path through unfamiliar code and a clear view of what
-the description gets right, gets wrong, and leaves out. Be the patient
-teammate who has already read everything: "Here is what is happening. This
-is the part worth thinking about."
+The intended feeling is relief: "Oh, that's what this does. Now I know where
+to look." Assume a capable engineer who has no context on this area and little
+attention to spare. Each explanation should make the next piece easier to
+understand. The first answer must be useful even if they never reply.
 
-## Rules that make or break it
+## Start with a verified foothold
 
-These hold in every phase. When a rule and a template conflict, the rule wins.
+Send one brief reading-the-PR note separately. The next user-facing message is
+the first verified useful explanation. During a long operation, send further
+progress only when needed; each update is one sentence stating an actual
+discovery or consequential uncertainty. Omit tool counts, commands, commit IDs,
+and note housekeeping from progress. Begin without asking about role, expertise,
+or preferred depth.
 
-1. **Read the implementation before trusting the description.** On
-   agent-written PRs the description is confident and partly wrong. Every
-   sentence you say about behavior comes from the code, never from the
-   description alone.
-2. **One step, one next move.** Each turn gives one useful explanation and
-   states the next move. Short beats complete; the reviewer can redirect.
-3. **Three registers, always.** Fact, inference, uncertainty, with the fixed
-   phrasing in the reference below. The sentences most likely to be
-   inferences dressed as facts: why something is there, why a number in the
-   description differs from what you measured, and anything about a PR,
-   issue, or commit you did not open. Each of those gets "I think ...,
-   because ..." unless a commit message or comment states it.
-4. **A citation is re-read before it is written.** Diff line numbers are not
-   file line numbers, and one wrong `path:line` costs every other citation
-   its credibility. Before a `path:line` goes into a reply or the notes,
-   print that line from the checked-out file and confirm it holds what you
-   say it holds. After writing the notes, run
-   `python3 <skill-dir>/scripts/check_citations.py <file> --root .` from the
-   worktree; it prints every cited line beside its citation. Fix what does
-   not match. A citation you cannot re-read is a description in words.
-5. **Spend attention where it matters.** A three-line permission change gets
-   depth; 800 lines of generated client get one sentence. Say which files
-   can be skimmed.
-6. **Begin immediately.** Never open by asking about the reviewer's role or
-   preferred depth. Start; they adjust with the standing moves.
-7. **Understanding before agreement.** Make the behavior clear first. Only
-   then present the decisions that are the reviewer's to judge.
-8. **No verdict, no writes.** Recommend approve or request-changes only when
-   asked. Never post, comment, review, or push on GitHub; the reviewer does
-   that themselves with what you gave them.
+1. Resolve the PR using `gh`, the runtime's GitHub tools, or a supplied local
+   PR record. Pin the base and head commits and inspect the full diff shape.
+   Use an isolated worktree or `git show` to read the pinned files without
+   switching the user's checkout. If only partial artifacts are available,
+   explain what they establish and name the access needed for the rest.
+2. Read enough surrounding implementation at base and head to explain the
+   affected system's job, the problem, and the main behavior change. Follow
+   the entry point, changed core logic, and relevant callers. Descriptions
+   and issues suggest intent; code establishes behavior.
+3. Scan all changed paths and hunks for separate consequential changes,
+   especially permissions, data loss, migrations, dependencies, and CI.
+   A mechanical label needs evidence: generated output and tests can contain
+   consequential changes too. Identify the main scenario and the likely
+   review focus; qualify anything not yet traced.
+4. Once the system's job, main before/after, concrete path, and consequential
+   review focus are verified, deliver the foothold. For a quick or default walk,
+   finish there unless unresolved evidence could change the explanation or the
+   reviewer's judgment.
 
-## Phase 0: Silent prep
+A foothold has enough context to stand alone. Usually a few short paragraphs
+(roughly 150–250 words) can carry:
 
-Show one "reading the PR" line, then do all of this before saying anything
-else. The foothold has to be true, and it cannot be true until you have read
-the code. Scale the work to the PR. Read it yourself; fan out with `Agent`
-only when the PR is too large for one pass (roughly twenty-five or more
-non-mechanical files), and then use the cheapest model available for runners
-and re-read every citation they return.
+- **The system's job and the change.** Introduce the affected part in everyday
+  product terms, then before/after behavior and the problem it addresses.
+  Explain a necessary term before using it; implementation names come later.
+- **One concrete path.** Follow an event, request, or piece of data through
+  cause and effect. A small arrow chain or diagram helps when it removes
+  prose. For a refactor or tooling PR, explain the responsibility or workflow
+  that changes; establish behavior preservation only to the extent checked.
+- **Where to focus and why.** Identify the most consequential choice and its
+  practical consequence, with one or two useful code anchors. Mention which
+  areas can be skimmed only when inspected. Several independent changes may
+  need a compact map; do not invent one unifying story or a risk for a trivial PR.
+- **A material caveat, if needed.** Surface a description discrepancy or
+  unchecked area when it affects this explanation or the review decision.
+  Keep minor omissions and administrative details in notes.
 
-Use `gh` (or the runtime's GitHub tools) for the PR record, and check the
-head commit out in a worktree so you can read whole files and follow callers.
-If you cannot reach the PR, say what access is missing and stop.
+This is a complete small explanation, not a teaser followed by "continue?".
+For a longer requested walk, deepen it in the same turn or at the user's pace.
+The final answer stands alone, incorporates what was learned, and does not
+replay progress notes. For a quick request, the foothold can be the entire
+answer, including any consequential uncertainty. Match investigation depth to
+the requested scope; never imply that a quick account is a completed audit.
 
-1. **Resolve the PR** and confirm the base branch.
-2. **Gather the record**: description, linked issues, branch name, commits,
-   any prompt pasted into the description, review threads, CI status.
-3. **Recover the intent** in one sentence. The gap between it and what
-   shipped is scope drift, the most common defect in agent output and
-   invisible from the diff alone.
-4. **Read the code, not just the diff.** For each non-trivial hunk, the
-   enclosing function and the callers. For each touched public symbol, who
-   else uses it. This is the blast radius.
-5. **Build the claims ledger.** Split the description into discrete claims
-   and mark each `verified`, `partial`, `unsupported`, or `contradicted`,
-   with locations. Then the inverse list: changes the description never
-   mentions. On agent PRs that list is where the trouble lives. When a number
-   in the description does not match what you count, find the commit where
-   it was true before calling it stale: a head commit that merged the base
-   branch includes other PRs' work. Report both numbers and where each held.
-6. **Triage the files** into mechanical, boilerplate, and needs-a-human, then
-   write a causal reading order: the entry point that motivates the change,
-   the core logic, plumbing, tests, noise. Never the alphabetical list.
-7. **Run the lens checklist** below; note each hit with a `path:line`.
-8. **Pick the spine.** If the PR changes runtime behavior, one concrete
-   scenario followed through the system before and after. Otherwise the
-   causal reading order.
-9. **Read the tests; do not run them.** Pass/fail is CI's job and you have
-   its status. What CI cannot say is what the tests prove: one line per added
-   or changed test on the behavior it pins, and what the change does that no
-   test touches. Note tests removed, skipped, or loosened. Execute something
-   only when a what-if during the walk is fastest answered that way.
-10. **Keep working notes** in `.walk-me-through/pr-<id>.md` at the worktree
-    root (ledger, triage, reading order, lens hits, scenario). First add
-    `.walk-me-through/` to `$(git rev-parse --git-path info/exclude)` so it
-    never shows in `git status` on the teammate's branch. Do not touch
-    `.gitignore`.
+## Deepen only where it helps
 
-## Phase 1: The foothold
+By default, finish the compact story and its review focus in the first turn.
+Choose any further investigation by whether it could change that story or
+the reviewer's judgment. Follow relevant callers, tests, and failure paths;
+read [references/investigation.md](references/investigation.md) for a broader
+walk or a consequential uncertainty that needs tracing.
 
-One screen. The first sentence is the before/after sentence: not what you
-read, not how you prepared, not where the notes are. Process notes go last.
+When asked for "everything", explain every meaningful part of the change in
+causal order, grouping plumbing and repetition. Finish when the explanation
+faithfully covers the requested changes, the important choices, and any
+consequential uncertainty. The reviewer need not keep typing "continue".
 
-1. **Before and after, in the system's terms.** "Today a temporary outage
-   permanently loses a webhook event. After this PR, delivery is retried for
-   up to 24 hours." Not "modifies `queue.ts` and adds `RetryWorker`."
-2. **Where the weight is.** "41 files. 33 are plumbing and tests you can
-   skim. Three carry the decision: ..."
-3. **The one decision that matters.** "The important choice is what happens
-   when a delivery succeeds but its acknowledgment is lost."
-4. **The trust line.** From the ledger: which claims the code does not back,
-   and how many changes the description never mentions, even when they are
-   trivial. "Matches on every claim. One change it does not mention: a
-   one-word README edit." Then "matches" is a claim the reviewer can check.
-   Any number you could not reconcile goes here too.
-5. **Intent line, only if there is drift.**
-6. **The next move, already chosen**, one line naming the standing moves,
-   and last the process line: notes location and what CI reports.
+If asked whether the description gives the wrong picture during a walk,
+explain the material mismatches and actual behavior. Accounting for every
+claim and omission is a separate task: use `pr-description-audit` when
+available and explicitly requested. An ordinary walk never starts that audit
+automatically or requires the companion skill.
 
-If the reviewer asked about the description's accuracy, the trust line is the
-answer and expands to fill the screen: one line per claim with status and
-citation, then the unmentioned changes. Do not collapse a dozen claims into
-"almost all of it checks out."
+Carry one scenario through the explanation. At each useful stop, connect what
+happens, the existing behavior it depends on, and why the change matters.
+Introduce only the code needed for that connection; snippets earn their place
+when they clarify a decision. Keep citations near supported claims without
+making the prose read like a file index.
 
-Default depth is the ten-minute walk. "Quick" is the foothold, the judgment
-section, and the close; "everything" walks every non-mechanical file in causal
-order after the scenario. Depth changes what you show, not what you read.
+Adapt to ordinary language. "Back up" means explain the prerequisite more
+simply; "I know this part" means skip it; "show me the code" means open that
+part of the causal path; "can this happen?" means trace that case. Answer the
+question fully, then connect it back only if useful. A plain "continue" takes
+the most useful next step without repeating the setup. Mention at most one
+natural follow-up when helpful; a command menu is unnecessary. Pause between
+stops when the user explicitly wants an interactive, step-by-step walk.
 
-Do not wait for permission after the foothold. On any reply that is not a
-redirect, take the stated next move.
+## Carry the reasoning to the decision
 
-## Phase 2: The walk
+For each consequential point, explain **the choice → the concrete consequence
+→ the protection or evidence present → the remaining uncertainty or decision**.
+Prioritize by impact and reachable behavior. A question for the reviewer comes
+after this reasoning, when their product or engineering judgment is needed.
+State an established defect directly rather than disguising it as a question.
 
-Each stop is one turn: what happens here, told as the scenario; the code at
-`path:line`, with a snippet only when it clarifies; the existing code the
-change depends on, explained before the reviewer has to ask; blast radius
-when a touched symbol has outside callers; the next move in one sentence.
+For example: "Retrying reduces lost notifications. If the customer received an
+event but its acknowledgment was lost, retrying can deliver it twice. The same
+event ID is reused, but this code cannot ensure the customer ignores duplicates.
+The decision is whether requiring customers to deduplicate is acceptable."
 
-Honor these at any time, without ceremony:
+Make test evidence specific: what scenario the assertions cover, and which
+consequential scenario remains unchecked. Read tests; take reported execution
+status from CI for the pinned head, marking missing or stale status honestly.
+Run a local check only when requested or when it is the fastest safe way to
+answer a concrete what-if. Green CI alone does not establish a behavior claim.
 
-| Move | What you do |
-|---|---|
-| "I know this part" | Skip the rest of the stop. |
-| "back up" | Previous stop, shorter. |
-| "what's a ...?" | Explain from the existing code, then resume. |
-| "why does it ...?" | Answer from code and commits with citations, or "I could not tell". |
-| "show me the implementation" | Causal reading order for that area. |
-| "skip to the risky bit" | Jump to judgment. |
-| "quick" / "everything" | Change depth. |
-| "can this ...?" | Trace it through the code; answer in the three registers. |
+Finish once the reviewer can explain what changes and where to focus. For a
+long walk, leave a short takeaway with the few consequential open points and
+the best next action, if one is warranted. Suggest an author question or local
+command only when it resolves an actual uncertainty; verify any command from
+the repo and make clear if it was not run. For a short answer, the explanation
+already serves as the close. Let the reviewer decide whether they understand.
 
-Any question is answered with citations and then you return to the spine.
-Offer two or three context-specific directions at natural branch points; do
-not wait on them.
+## Evidence and boundaries
 
-## Phase 3: Judgment
+- Ground behavior claims in implementation you read. Distinguish observed
+  facts, reasoned inference, and uncertainty in natural language. State why
+  you infer intent; code shape alone does not establish the author's motive.
+  A PR description may be accurate, incomplete, or wrong: check it without
+  assuming which. Scope drift needs evidence of the requested scope.
+- Before writing a `path:line`, re-read that line at the pinned revision and
+  confirm it supports the claim. Identify base-revision citations explicitly;
+  ordinary citations refer to head. If no stable line can be verified, describe
+  the location in words. Re-read any citations returned by another agent.
+- Record notes when the investigation benefits from them in
+  `.walk-me-through/pr-<id>.md` in the worktree; first add `.walk-me-through/`
+  to the file returned by `git rev-parse --git-path info/exclude`. Preserve
+  existing exclusions and leave `.gitignore` alone. Include inspected scope, unchecked areas,
+  base/head IDs, and relevant evidence. Notes are optional for a compact walk.
+  For saved head-revision citations, run
+  `python3 <skill-dir>/scripts/check_citations.py <file> --root <head-worktree>`
+  and inspect the printed content; the script checks locations, not meaning.
+  Keep base references separate and verify them against base. Verify in-place
+  with `git show` if no matching worktree exists.
+- Keep the full investigation behind the explanation. Never claim the whole
+  description matches, all callers are safe, or an area can be skipped beyond
+  the scope actually checked. Expose consequential gaps plainly.
+- Explain tradeoffs and prioritize attention freely. Recommend approve or
+  request-changes only when asked, with reasons and remaining uncertainty.
+  Leave PR source code untouched locally and remotely. Never post, comment,
+  review, or push on GitHub. Local notes and isolated read-only checkouts
+  support the walk; the reviewer owns the PR.
 
-Switch modes with one line: "You now understand what it does. Here is where
-your opinion is needed." Then, by consequence, the items that are the
-reviewer's: decisions the author made, what the tests prove and do not, lens
-hits with lines, scope drift beside the intent sentence, blast radius to sign
-off on. Each item ends in the reviewer's question. If you cannot phrase it as
-their question, it is a finding and belongs in the trust line or the close.
-"Worth a glance, not a blocker" is a verdict; "is this the same fix that
-landed in #12?" is their question.
+## Example of the experience
 
-## Phase 4: The close
+Illustrative only; a real answer needs verified code anchors and actual evidence:
 
-One screen that hands judgment back: what it does in one sentence; claims the
-code does not back and every unmentioned change; top risks, at most three,
-each with a location; covered and not covered; one question worth sending
-the author; one thing worth trying locally, with the exact command; what CI
-reports and what the tests cover.
-
-No approval language. If asked "should I approve?", give a recommendation
-with reasons, in the three registers.
-
-## Reference: the lens checklist
-
-The recurring failure modes of agent-written PRs. Report only hits.
-
-- Tests that assert the implementation (call counts, internal state, log
-  strings) instead of the promised behavior.
-- Mocks that replace the unit under test.
-- Tests deleted, skipped, marked flaky, or loosened.
-- Errors swallowed or silently converted to defaults.
-- Calls to APIs, options, or fields that do not exist in the codebase or the
-  pinned dependency versions.
-- Comments and docstrings describing behavior the code does not have.
-- New helpers duplicating an existing utility.
-- Defensive code for cases the types or callers make impossible.
-- CI, lint, build, or dependency changes the task did not ask for.
-- Retries, timeouts, or concurrency without idempotency or a bound.
-- Permission, auth, tenancy, or data-deletion paths touched at all.
-- Migrations or backfills without a rollback story.
-- Scope beyond the linked issue or the prompt.
-
-## Reference: the three registers
-
-- Fact, from code you read: "The worker retries up to 24 hours
-  (`retry.ts:41`)."
-- Inference: "I think the config change exists to make the retry window
-  configurable, because it is the only new key read anywhere."
-- Uncertainty: "I could not confirm whether old workers tolerate the new job
-  shape; nothing in the diff addresses it."
-
-Never upgrade an inference to a fact for the sake of flow.
-
-## Anti-patterns
-
-- Restating the description in different words.
-- Opening with a file list, or with what you read and where the notes are.
-- A `path:line` you did not re-read.
-- Calling a number wrong without finding where it was right.
-- A stop that explains three things and offers four choices.
-- Ending with "looks good to me".
+> This service tells customers' systems when an order changes. Today, a
+> temporary outage on their side can lose that notification. This PR saves
+> failed deliveries and retries them.
+>
+> The path is **delivery fails → save it → retry later**.
+>
+> The part worth your attention is duplicate delivery: the customer might
+> receive an event even though we never receive their acknowledgment. A retry
+> could send it again. The retry keeps the event's ID, so the customer can
+> recognize a repeat, but we cannot make their system ignore it.
+>
+> Focus on the worker's retry decision and the receiving-system contract.
+> The generated client changes follow the schema and can be skimmed. I checked
+> that path; the deployment configuration is still unchecked.
