@@ -19,6 +19,7 @@ npx skills add YiftachCohen/skills --skill client-feedback
 npx skills add YiftachCohen/skills --skill design-prompt
 npx skills add YiftachCohen/skills --skill loom-watch
 npx skills add YiftachCohen/skills --skill migration-safety
+npx skills add YiftachCohen/skills --skill walk-me-through
 ```
 
 For Codex, expose the same skill directory in your Codex skills folder. The
@@ -34,6 +35,7 @@ shared source of truth is the `SKILL.md` file inside each skill directory.
 | [design-prompt](./design-prompt) | Turn a rough request into one ambitious, copy-pasteable design prompt: committed direction, seed string, critic subagent loop, restraint pass. |
 | [loom-watch](./loom-watch) | Convert Loom recordings into metadata, captions, sampled frames, and a timestamped review manifest. |
 | [migration-safety](./migration-safety) | Review migrations, backfills, dry runs, idempotency, clean-start rebuilds, and reconciliation plans. |
+| [walk-me-through](./walk-me-through) | Make an unfamiliar PR understandable: get the missing context, follow what changes, and focus on the choices that need your judgment. |
 
 ## Repository Scope
 

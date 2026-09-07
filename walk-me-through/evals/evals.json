@@ -1,0 +1,218 @@
+{
+  "skill_name": "walk-me-through",
+  "evals": [
+    {
+      "id": 1,
+      "name": "unfamiliar-first-use",
+      "prompt": "Walk me through PR #418. A teammate's agent opened it, the description is three screens long, and I have no context on this part of the codebase.",
+      "expected_output": "A verified, self-contained explanation of the system, change, concrete scenario, and consequential review focus.",
+      "files": [],
+      "expectations": [
+        "Behavior claims are supported by implementation inspected at the supplied or resolved revision; cited locations are re-read and support their claims. Inferences and consequential uncertainty are distinguishable in natural language.",
+        "The answer respects the requested scope and never implies that unchecked behavior, CI, callers, or description claims were verified. It makes no GitHub writes and offers an approval recommendation only if asked.",
+        "An unfamiliar reader can explain the affected system purpose, what changes, and why it matters after reading the opening alone; necessary terms are explained before implementation names carry the explanation.",
+        "The first completed response contains a coherent causal account and explains where attention belongs and the consequence; it is useful without a continue reply, role question, or depth selection.",
+        "The explanation prioritizes material behavior and evidence. Minor omissions, file counts, process notes, and command menus do not crowd out the story.",
+        "The transcript shows diff-wide triage and inspection of surrounding base/head implementation before behavior is explained; it does not perform an exhaustive claims ledger or historical count reconciliation.",
+        "Any continued investigation in the same turn is selected for its ability to change the explanation or judgment; the final answer stands alone."
+      ]
+    },
+    {
+      "id": 3,
+      "name": "what-if-redirect",
+      "prompt": "We are mid-walk on PR #418, webhook retries. I know the queue part, skip ahead. Actually, can this deliver the same event twice?",
+      "expected_output": "A direct trace of the duplicate-delivery case, its consequence, existing protection, and remaining uncertainty.",
+      "files": [],
+      "expectations": [
+        "Behavior claims are supported by implementation inspected at the supplied or resolved revision; cited locations are re-read and support their claims. Inferences and consequential uncertainty are distinguishable in natural language.",
+        "The answer respects the requested scope and never implies that unchecked behavior, CI, callers, or description claims were verified. It makes no GitHub writes and offers an approval recommendation only if asked.",
+        "Answers the what-if before continuing, skips the already-understood queue introduction, and does not restart the walkthrough.",
+        "Distinguishes server behavior from external receiver assumptions and names the reachable failure sequence if duplicates are possible."
+      ]
+    },
+    {
+      "id": 4,
+      "name": "dependency-and-config",
+      "prompt": "Walk me through #77. It is a dependency bump plus some config changes, nothing runtime.",
+      "expected_output": "An explanation of what the dependency/configuration change does to the workflow and any verified runtime implications.",
+      "files": [],
+      "expectations": [
+        "Behavior claims are supported by implementation inspected at the supplied or resolved revision; cited locations are re-read and support their claims. Inferences and consequential uncertainty are distinguishable in natural language.",
+        "The answer respects the requested scope and never implies that unchecked behavior, CI, callers, or description claims were verified. It makes no GitHub writes and offers an approval recommendation only if asked.",
+        "An unfamiliar reader can explain the affected system purpose, what changes, and why it matters after reading the opening alone; necessary terms are explained before implementation names carry the explanation.",
+        "The first completed response contains a coherent causal account and explains where attention belongs and the consequence; it is useful without a continue reply, role question, or depth selection.",
+        "The explanation prioritizes material behavior and evidence. Minor omissions, file counts, process notes, and command menus do not crowd out the story.",
+        "Checks the user description against the actual changes instead of assuming no runtime effect; uses a workflow or responsibility story when a runtime scenario adds no value.",
+        "Inspects dependency and configuration significance before treating lockfile/generated volume as skimmable; does not manufacture a risk."
+      ]
+    },
+    {
+      "id": 5,
+      "name": "scope-drift",
+      "prompt": "The issue asked for retry on webhook failures. Walk me through the PR that closes it.",
+      "expected_output": "An explanation grounded in the requested behavior, including consequential scope drift if present.",
+      "files": [],
+      "expectations": [
+        "Behavior claims are supported by implementation inspected at the supplied or resolved revision; cited locations are re-read and support their claims. Inferences and consequential uncertainty are distinguishable in natural language.",
+        "The answer respects the requested scope and never implies that unchecked behavior, CI, callers, or description claims were verified. It makes no GitHub writes and offers an approval recommendation only if asked.",
+        "An unfamiliar reader can explain the affected system purpose, what changes, and why it matters after reading the opening alone; necessary terms are explained before implementation names carry the explanation.",
+        "The first completed response contains a coherent causal account and explains where attention belongs and the consequence; it is useful without a continue reply, role question, or depth selection.",
+        "The explanation prioritizes material behavior and evidence. Minor omissions, file counts, process notes, and command menus do not crowd out the story.",
+        "Compares documented intent with implementation and explains the practical significance of extra changes; labels inferred motives rather than inventing author intent."
+      ]
+    },
+    {
+      "id": 6,
+      "name": "judgment-with-reasoning",
+      "prompt": "I get what PR #418 does now. What should I actually worry about?",
+      "expected_output": "Prioritized consequences with evidence, protections, and the decisions left to the reviewer.",
+      "files": [],
+      "expectations": [
+        "Behavior claims are supported by implementation inspected at the supplied or resolved revision; cited locations are re-read and support their claims. Inferences and consequential uncertainty are distinguishable in natural language.",
+        "The answer respects the requested scope and never implies that unchecked behavior, CI, callers, or description claims were verified. It makes no GitHub writes and offers an approval recommendation only if asked.",
+        "Each consequential concern explains a reachable scenario and impact, plus existing protection or test evidence, before asking for judgment.",
+        "Established defects are stated directly. The answer does not merely hand back questions or assert that the user now understands.",
+        "No forced author question or local command appears unless it would resolve a named uncertainty."
+      ]
+    },
+    {
+      "id": 8,
+      "name": "requested-verdict",
+      "prompt": "You found the crash case is not tested, despite the description, and the worker test only counts retries. Should I approve this PR?",
+      "expected_output": "A reasoned recommendation calibrated to verified behavior and remaining gaps.",
+      "files": [],
+      "expectations": [
+        "Behavior claims are supported by implementation inspected at the supplied or resolved revision; cited locations are re-read and support their claims. Inferences and consequential uncertainty are distinguishable in natural language.",
+        "The answer respects the requested scope and never implies that unchecked behavior, CI, callers, or description claims were verified. It makes no GitHub writes and offers an approval recommendation only if asked.",
+        "Inspects the relevant behavior and evidence as needed and gives an explicit recommendation because requested, distinguishing a demonstrated defect from missing evidence.",
+        "Explains the practical reason for the recommendation without posting a review."
+      ]
+    },
+    {
+      "id": 9,
+      "name": "two-minute-budget",
+      "prompt": "Quick version of #302, I have two minutes before standup.",
+      "expected_output": "A compact complete explanation with the consequential focus and honest scope.",
+      "files": [],
+      "expectations": [
+        "Behavior claims are supported by implementation inspected at the supplied or resolved revision; cited locations are re-read and support their claims. Inferences and consequential uncertainty are distinguishable in natural language.",
+        "The answer respects the requested scope and never implies that unchecked behavior, CI, callers, or description claims were verified. It makes no GitHub writes and offers an approval recommendation only if asked.",
+        "An unfamiliar reader can explain the affected system purpose, what changes, and why it matters after reading the opening alone; necessary terms are explained before implementation names carry the explanation.",
+        "The first completed response contains a coherent causal account and explains where attention belongs and the consequence; it is useful without a continue reply, role question, or depth selection.",
+        "The explanation prioritizes material behavior and evidence. Minor omissions, file counts, process notes, and command menus do not crowd out the story.",
+        "The initial investigation is proportionate to a verified foothold and its material uncertainties; it does not expand into exhaustive auditing or test-count history.",
+        "The final answer can be read in well under two minutes and has no redundant foothold/judgment/close recaps. It includes material uncertainty even when brief."
+      ]
+    },
+    {
+      "id": 10,
+      "name": "full-walk-pr9",
+      "prompt": "Walk me through PR #9 in this repo. A teammate's agent opened it, the description is long, and I have no context on the atlas skill's scripts.",
+      "expected_output": "Real fixture: YiftachCohen/skills PR #9. A grounded explanation of the system and change, with a complete first-turn story.",
+      "files": [],
+      "expectations": [
+        "Behavior claims are supported by implementation inspected at the supplied or resolved revision; cited locations are re-read and support their claims. Inferences and consequential uncertainty are distinguishable in natural language.",
+        "The answer respects the requested scope and never implies that unchecked behavior, CI, callers, or description claims were verified. It makes no GitHub writes and offers an approval recommendation only if asked.",
+        "An unfamiliar reader can explain the affected system purpose, what changes, and why it matters after reading the opening alone; necessary terms are explained before implementation names carry the explanation.",
+        "The first completed response contains a coherent causal account and explains where attention belongs and the consequence; it is useful without a continue reply, role question, or depth selection.",
+        "The explanation prioritizes material behavior and evidence. Minor omissions, file counts, process notes, and command menus do not crowd out the story.",
+        "Reads pinned whole files and relevant callers, not only the diff; delivers a useful opening and keeps investigation focused on understanding and judgment.",
+        "Explains the main change through a concrete example and identifies consequential review focus with verified code anchors.",
+        "Any harmless README omission stays out of the opening unless it materially affects this PR; unseen changes are not declared harmless."
+      ]
+    },
+    {
+      "id": 12,
+      "name": "quick-pr11",
+      "prompt": "Quick version of PR #11 in this repo. I have two minutes before standup and have never looked at the atlas tours code.",
+      "expected_output": "Real fixture: YiftachCohen/skills PR #11. A brief explanation that supplies the missing context and points to the consequential choices.",
+      "files": [],
+      "expectations": [
+        "Behavior claims are supported by implementation inspected at the supplied or resolved revision; cited locations are re-read and support their claims. Inferences and consequential uncertainty are distinguishable in natural language.",
+        "The answer respects the requested scope and never implies that unchecked behavior, CI, callers, or description claims were verified. It makes no GitHub writes and offers an approval recommendation only if asked.",
+        "An unfamiliar reader can explain the affected system purpose, what changes, and why it matters after reading the opening alone; necessary terms are explained before implementation names carry the explanation.",
+        "The first completed response contains a coherent causal account and explains where attention belongs and the consequence; it is useful without a continue reply, role question, or depth selection.",
+        "The explanation prioritizes material behavior and evidence. Minor omissions, file counts, process notes, and command menus do not crowd out the story.",
+        "Explains what a tour does for its user, the before/after, and a concrete path without presupposing atlas internals.",
+        "Investigates lane/entry-point changes enough to judge whether they affect the explanation and surfaces material omissions, without reconciling unrelated historical test counts.",
+        "No compulsory author question, command, ledger, or three-section recap crowds out the quick story."
+      ]
+    },
+    {
+      "id": 13,
+      "name": "simple-change-no-invented-risk",
+      "prompt": "Walk me through this PR: it fixes a typo in the settings label. I have never worked on settings.",
+      "expected_output": "A proportionately short explanation of the visible correction and verified scope.",
+      "files": [],
+      "expectations": [
+        "Behavior claims are supported by implementation inspected at the supplied or resolved revision; cited locations are re-read and support their claims. Inferences and consequential uncertainty are distinguishable in natural language.",
+        "The answer respects the requested scope and never implies that unchecked behavior, CI, callers, or description claims were verified. It makes no GitHub writes and offers an approval recommendation only if asked.",
+        "An unfamiliar reader can explain the affected system purpose, what changes, and why it matters after reading the opening alone; necessary terms are explained before implementation names carry the explanation.",
+        "The first completed response contains a coherent causal account and explains where attention belongs and the consequence; it is useful without a continue reply, role question, or depth selection.",
+        "The explanation prioritizes material behavior and evidence. Minor omissions, file counts, process notes, and command menus do not crowd out the story.",
+        "Checks the actual diff and supplies only the context needed to understand the change; does not stretch to a word target.",
+        "Does not invent a design decision, failure scenario, author question, or local command when the inspected change warrants none."
+      ]
+    },
+    {
+      "id": 14,
+      "name": "independent-changes",
+      "prompt": "Help me understand this large PR. The description says cleanup, but there are changes in authentication, event retries, and generated clients.",
+      "expected_output": "A compact map of independently consequential changes, with deeper attention to real effects.",
+      "files": [],
+      "expectations": [
+        "Behavior claims are supported by implementation inspected at the supplied or resolved revision; cited locations are re-read and support their claims. Inferences and consequential uncertainty are distinguishable in natural language.",
+        "The answer respects the requested scope and never implies that unchecked behavior, CI, callers, or description claims were verified. It makes no GitHub writes and offers an approval recommendation only if asked.",
+        "An unfamiliar reader can explain the affected system purpose, what changes, and why it matters after reading the opening alone; necessary terms are explained before implementation names carry the explanation.",
+        "The first completed response contains a coherent causal account and explains where attention belongs and the consequence; it is useful without a continue reply, role question, or depth selection.",
+        "The explanation prioritizes material behavior and evidence. Minor omissions, file counts, process notes, and command menus do not crowd out the story.",
+        "Diff-wide triage catches unrelated consequential changes; the story is not reduced to retries while authentication changes disappear.",
+        "Explains each independent change in plain terms and prioritizes by consequence; generated code is grouped only after checking its significance."
+      ]
+    },
+    {
+      "id": 15,
+      "name": "partial-access",
+      "prompt": "Walk me through this PR from the supplied diff. I do not have access to the linked issue or the rest of the repository.",
+      "expected_output": "A useful bounded explanation from available evidence, with specific limits.",
+      "files": [],
+      "expectations": [
+        "Behavior claims are supported by implementation inspected at the supplied or resolved revision; cited locations are re-read and support their claims. Inferences and consequential uncertainty are distinguishable in natural language.",
+        "The answer respects the requested scope and never implies that unchecked behavior, CI, callers, or description claims were verified. It makes no GitHub writes and offers an approval recommendation only if asked.",
+        "An unfamiliar reader can explain the affected system purpose, what changes, and why it matters after reading the opening alone; necessary terms are explained before implementation names carry the explanation.",
+        "The first completed response contains a coherent causal account and explains where attention belongs and the consequence; it is useful without a continue reply, role question, or depth selection.",
+        "The explanation prioritizes material behavior and evidence. Minor omissions, file counts, process notes, and command menus do not crowd out the story.",
+        "Explains only behavior established by supplied artifacts, labels missing surrounding-code assumptions, and identifies what is needed to resolve consequential uncertainty.",
+        "Does not block all help solely because GitHub is unavailable or imply it verified intent, callers, or CI."
+      ]
+    },
+    {
+      "id": 16,
+      "name": "interactive-opt-in",
+      "prompt": "Walk me through this PR one step at a time and pause so I can ask questions.",
+      "expected_output": "A self-contained foothold followed by pauses at useful conceptual boundaries as explicitly requested.",
+      "files": [],
+      "expectations": [
+        "Behavior claims are supported by implementation inspected at the supplied or resolved revision; cited locations are re-read and support their claims. Inferences and consequential uncertainty are distinguishable in natural language.",
+        "The answer respects the requested scope and never implies that unchecked behavior, CI, callers, or description claims were verified. It makes no GitHub writes and offers an approval recommendation only if asked.",
+        "An unfamiliar reader can explain the affected system purpose, what changes, and why it matters after reading the opening alone; necessary terms are explained before implementation names carry the explanation.",
+        "The first completed response contains a coherent causal account and explains where attention belongs and the consequence; it is useful without a continue reply, role question, or depth selection.",
+        "The explanation prioritizes material behavior and evidence. Minor omissions, file counts, process notes, and command menus do not crowd out the story.",
+        "Respects the requested interactive pacing while making the initial explanation useful; does not deliver an unsolicited exhaustive tour.",
+        "Subsequent questions control the path without restarting, testing the user, or showing a standing-command menu."
+      ]
+    },
+    {
+      "id": 17,
+      "name": "material-description-check",
+      "prompt": "Walk me through #418. The description says customers can never process an event twice. Is that giving me the right picture?",
+      "expected_output": "A concise explanation of actual duplicate-delivery behavior and the protection or assumption behind it.",
+      "files": [],
+      "expectations": [
+        "Inspects the implementation supporting the consequential claim and explains the actual reachable behavior, with verified citations and clear uncertainty.",
+        "Provides enough context for an unfamiliar reader to understand why the discrepancy matters.",
+        "Does not launch a companion skill, inventory every claim or omission, or reconcile unrelated historical counts; finishes with the material explanation."
+      ]
+    }
+  ]
+}
