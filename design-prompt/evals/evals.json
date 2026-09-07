@@ -1,0 +1,57 @@
+{
+  "skill_name": "design-prompt",
+  "evals": [
+    {
+      "id": 0,
+      "name": "one-liner-no-direction",
+      "prompt": "write me a prompt I can give claude code to design a landing page for my productivity app. it keeps giving me the same purple gradient thing",
+      "expected_output": "A single copy-pasteable prompt. It commits to a specific ambitious direction (offering a few alternatives in one line each), includes the seed-string variety technique, a fresh-context critic subagent loop with a /10 score and hidden stopping threshold, a restraint pass, and browser verification. No code, no design built.",
+      "files": [],
+      "assertions": [
+        "Output contains exactly one fenced code block holding the copy-pasteable prompt, and no design or code was built",
+        "Prompt names a specific, concrete creative direction (not 'modern, clean, minimal')",
+        "Prompt includes a critic loop: separate subagent, fresh context, screenshot only, score out of 10",
+        "Prompt hides the stopping threshold from the critic and caps iterations",
+        "Prompt includes a restraint pass that removes glows/gradients/redundant labels/unneeded containers",
+        "Prompt asks for browser verification of the result",
+        "Prompt includes the seed-string variety technique (random alphanumeric string, direction derived from it, string not revealed)",
+        "Response offers several one-line alternative directions and states which one the prompt uses"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "user-has-taste-notes",
+      "prompt": "I need a design prompt for our dashboard redesign. I'm imagining something like an industrial control panel, tactile, clicky. But when I picture it skeuomorphic or cartoony it feels tacky. Gray gradients would be boring, needs texture. Maybe some color. We're on Next.js with Tailwind and shadcn, must keep the existing sidebar nav.",
+      "expected_output": "The prompt sharpens the user's own direction rather than replacing it, quotes their taste notes (no skeuomorphism, texture over gray gradients, some color), keeps the Next.js/Tailwind/shadcn and sidebar constraints, includes the critic loop and restraint pass, and omits the seed-string technique since a direction was given.",
+      "files": [],
+      "assertions": [
+        "Output contains exactly one fenced code block holding the copy-pasteable prompt, and no design or code was built",
+        "Prompt names a specific, concrete creative direction (not 'modern, clean, minimal')",
+        "Prompt includes a critic loop: separate subagent, fresh context, screenshot only, score out of 10",
+        "Prompt hides the stopping threshold from the critic and caps iterations",
+        "Prompt includes a restraint pass that removes glows/gradients/redundant labels/unneeded containers",
+        "Prompt asks for browser verification of the result",
+        "Prompt quotes or preserves the user's taste notes: no skeuomorphism/cartoony, texture over gray gradients, some color",
+        "Prompt keeps the Next.js/Tailwind/shadcn stack and the existing sidebar nav constraint",
+        "Prompt does NOT include the seed-string technique (direction was given)"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "too-generic-existing-design",
+      "prompt": "our settings page looks like every other SaaS app. can you give me a prompt to make it feel premium, like apple-native? we have no image gen API key btw",
+      "expected_output": "The prompt leans on restraint (remove until it looks expensive: native controls, no nested containers, typography-driven hierarchy), explicitly says no image generation is available and asks for restraint rather than fake richness, and still includes the critic loop and browser verification.",
+      "files": [],
+      "assertions": [
+        "Output contains exactly one fenced code block holding the copy-pasteable prompt, and no design or code was built",
+        "Prompt names a specific, concrete creative direction (not 'modern, clean, minimal')",
+        "Prompt includes a critic loop: separate subagent, fresh context, screenshot only, score out of 10",
+        "Prompt hides the stopping threshold from the critic and caps iterations",
+        "Prompt includes a restraint pass that removes glows/gradients/redundant labels/unneeded containers",
+        "Prompt asks for browser verification of the result",
+        "Prompt explicitly states no image generation is available and asks for restraint rather than fake richness",
+        "Direction is Apple-native minimalism driven by removal: native controls, no nested containers, typography-led hierarchy"
+      ]
+    }
+  ]
+}

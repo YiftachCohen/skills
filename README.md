@@ -16,6 +16,7 @@ Install an individual skill in Claude Code:
 npx skills add YiftachCohen/skills --skill atlas
 npx skills add YiftachCohen/skills --skill babysit-pr
 npx skills add YiftachCohen/skills --skill client-feedback
+npx skills add YiftachCohen/skills --skill design-prompt
 npx skills add YiftachCohen/skills --skill loom-watch
 npx skills add YiftachCohen/skills --skill migration-safety
 ```
@@ -30,6 +31,7 @@ shared source of truth is the `SKILL.md` file inside each skill directory.
 | [atlas](./atlas) | Map a codebase into a local-only interactive architecture atlas with drill-down, flow tracing, blast radius, and no upload. |
 | [babysit-pr](./babysit-pr) | Drive a GitHub pull request through failing CI, bot comments, review feedback, and final green status. |
 | [client-feedback](./client-feedback) | Translate, verify, classify, and respond to client or end-user feedback before implementing changes. |
+| [design-prompt](./design-prompt) | Turn a rough request into one ambitious, copy-pasteable design prompt: committed direction, seed string, critic subagent loop, restraint pass. |
 | [loom-watch](./loom-watch) | Convert Loom recordings into metadata, captions, sampled frames, and a timestamped review manifest. |
 | [migration-safety](./migration-safety) | Review migrations, backfills, dry runs, idempotency, clean-start rebuilds, and reconciliation plans. |
 
