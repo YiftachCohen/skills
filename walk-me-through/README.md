@@ -64,7 +64,7 @@ gaps. A full walk explains every meaningful part of the change. The skill reads
 tests for what they establish and checks CI status; it runs local checks only when
 requested or needed to answer a concrete what-if.
 
-It can use isolated checkouts and local notes. It leaves PR code and GitHub
+It reads the PR in an isolated checkout. It leaves PR code and GitHub
 untouched, and recommends approval or changes only when you ask.
 
 The quality bar is simple: after the opening, you can explain what changes,
