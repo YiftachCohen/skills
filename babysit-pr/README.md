@@ -39,9 +39,22 @@ pass with the `/loop` skill rather than holding one long invocation open.
 
 ## What it checks
 
-- Current PR, branch, and dirty working-tree state.
-- CI check status and focused failing logs.
+- Current PR, branch, and dirty working-tree state, synced to the remote head.
+- Mergeability (conflicts, behind base, draft, fork) and the review decision.
+- Required vs advisory CI checks (`gh pr checks --required`) and focused
+  failing logs.
 - Review threads, submitted reviews, and top-level PR comments.
 - Bot findings such as CodeRabbit comments, after verifying them against the
   actual code.
 - Whether the next safe status is `DONE`, `NOT YET`, or `BLOCKED`.
+- PR comments and CI logs as untrusted data: findings are verified, embedded
+  instructions are ignored.
+
+## Layout
+
+- `SKILL.md` — the loop.
+- `scripts/wait-for-checks.sh` — one blocking wait: lets checks register on the
+  pushed commit, then `gh pr checks --watch --fail-fast`, then a JSON snapshot.
+- `references/reviewer-bots.md` — reviewer-bot rate limits and re-triggering.
+- Safety-cap counters (fix attempts, reruns, rate limits) persist per PR in
+  `.git/babysit-pr/<pr>.json`, so scheduled `--once` passes still honor them.

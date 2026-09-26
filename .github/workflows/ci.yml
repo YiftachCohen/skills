@@ -21,3 +21,19 @@ jobs:
         run: python3 atlas/scripts/render.py atlas/examples/demo.json -o /tmp/out.html
       - name: Viewer JS syntax
         run: node --check atlas/templates/viewer.js
+      - name: Shell scripts parse
+        run: for f in */scripts/*.sh; do bash -n "$f"; done
+      - name: Skill descriptions fit the 1024-char limit
+        run: |
+          python3 - <<'PY'
+          import glob, re, sys
+          bad = []
+          for f in sorted(glob.glob("*/SKILL.md")):
+              fm = open(f).read().split("---")[1]
+              m = re.search(r"^description:\s*(?:[|>][-+]?\s*\n((?:[ \t]+.*\n?)+)|(.*))", fm, re.M)
+              d = " ".join((m.group(1) or m.group(2) or "").split()) if m else ""
+              print(f"{f}: {len(d)}")
+              if not d or len(d) > 1024:
+                  bad.append(f)
+          sys.exit(f"description missing or over 1024 chars: {bad}" if bad else 0)
+          PY

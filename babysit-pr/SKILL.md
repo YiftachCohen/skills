@@ -1,21 +1,18 @@
 ---
 name: babysit-pr
 description: |
-  Babysit a GitHub pull request until it is green and review-clean. Use this
-  skill whenever the user says "babysit this PR", "green PR loop", "get CI
-  green", "watch the PR", "land this PR", "fix CI and CodeRabbit", "drive the
-  PR to green", "keep checking until it passes", or asks to handle failing PR
-  checks/review comments. This skill is the portable Claude/Codex source of
-  truth for the PR loop: resolve the PR, poll CI and unresolved review threads,
-  root-cause failures, verify review comments before changing code, push once per
-  pass, and report DONE / NOT YET / BLOCKED. It should trigger even if the user
-  only says "PR is red", "can you babysit it?", "looks like test in PR is
-  stuck", "CodeRabbit is still running", "another agent fixed CI", or attaches
-  PR instructions / CI logs / task notifications that define the publish flow.
-  It should also handle reviewer-bot rate limits, quota exhaustion, 429/resource
-  exhausted messages, and "CodeRabbit hit rate limit" by waiting out the cooldown
-  and re-triggering review through a repo-supported mechanism instead of making
-  speculative code changes.
+  Babysit a GitHub pull request until it is green and review-clean: resolve the
+  PR, wait on CI without idle polling, root-cause failing checks, verify review
+  comments against the code before fixing, handle merge conflicts, push once
+  per pass, and report DONE / NOT YET / BLOCKED. Portable across Claude Code
+  and Codex. Use whenever the user says "babysit this PR", "watch the PR",
+  "get CI green", "drive the PR to green", "land this PR", "fix CI and
+  CodeRabbit", or "keep checking until it passes", and also for "PR is red",
+  "test in PR is stuck", "CodeRabbit is still running", "another agent fixed
+  CI", or when they attach PR instructions, CI logs, or task notifications
+  that define the publish flow. Also covers reviewer-bot rate limits (429,
+  quota, "Review limit reached"): wait out the cooldown and re-trigger review
+  instead of making speculative code changes.
 allowed-tools:
   - Bash
   - Read
@@ -32,8 +29,10 @@ allowed-tools:
 
 Drive a pull request toward this definition of done:
 
-- CI checks are green.
-- No actionable unresolved review threads remain.
+- Required CI checks are green on the current head commit.
+- The PR does not conflict with its base.
+- No actionable unresolved review threads or unaddressed requested changes
+  remain.
 - CodeRabbit or bot comments were verified against the code before being fixed.
 - Real failures were root-caused, not guessed around.
 - Any push is intentional and contains only the PR fixes.
@@ -134,8 +133,9 @@ check it", "status only").
 
 A pass ends the loop (returns to the user) only on a **terminal** status:
 
-- `DONE` — all required CI checks green and no unresolved actionable review
-  threads. Return.
+- `DONE` — required CI checks green, no conflict, no unresolved actionable
+  review threads or unaddressed requested changes (Step 5 has the full list).
+  Return.
 - `BLOCKED` — auth/access missing, the same check failed after two fix attempts,
   a human product/architecture decision is needed, or a risky operation needs
   approval. Return and ask.
@@ -156,13 +156,37 @@ continue the loop." Concretely:
   guess at the same failure).
 - Total in-loop wait exceeding ~30 min with no state change → return `NOT YET`
   (CI may be queued/stuck; let the user decide).
-- A genuine flake/outage: rerun the job once, then if it still fails treat it as
+- A genuine flake/outage: rerun the failed jobs once per check per commit
+  (tracked in `reruns`), then if it still fails treat it as
   a real failure (root-cause) or `BLOCKED`, not an infinite rerun.
 - Reviewer-bot rate limit: wait through the stated cooldown, or use a conservative
   default of 15-30 minutes if no retry time is given, then re-trigger review once.
-  If the same rate limit comes back twice in the same invocation, surface
-  `NOT YET` with the evidence and suggested next check time instead of burning
-  loop passes.
+  If the same rate limit comes back twice for the same PR, surface `NOT YET`
+  with the evidence and suggested next check time instead of burning loop
+  passes.
+
+**Keep the caps in a state file, not only in context.** Scheduled `--once`
+passes (see Cross-session scheduling) start with no memory, so counters kept
+only in the conversation reset every run and the caps never fire. Keep one
+small JSON file per PR, shared across worktrees:
+
+```bash
+STATE="$(git rev-parse --path-format=absolute --git-common-dir)/babysit-pr/$PR.json"
+mkdir -p "$(dirname "$STATE")"
+[ -f "$STATE" ] || echo '{"passes":0,"fix_attempts":{},"reruns":{},"rate_limits":[]}' > "$STATE"
+```
+
+- `passes`: incremented every pass; the 12-pass cap applies per invocation, but
+  a large total across runs is worth mentioning in the report.
+- `fix_attempts`: `{ "<check>": [{"sha": "...", "summary": "..."}] }`, one
+  entry per pushed fix for that check. Two entries and a third failure →
+  `BLOCKED`.
+- `reruns`: `{ "<check>": "<sha>" }` — the commit a rerun was already spent on.
+- `rate_limits`: `[{"bot": "...", "at": "<ISO time>", "retry_after": "..."}]`.
+
+Read it at the start of Step 0, update it with `jq` (or rewrite it) whenever a
+counter changes, and delete it once the PR is merged or closed. It lives inside
+`.git`, so it is never committed.
 
 Ask before destructive or high-risk actions:
 
@@ -190,9 +214,8 @@ is hit.
    c. If `DONE` or `BLOCKED` → break and return.
    d. If `NOT YET` → **block until state changes, then loop** (do not return,
       and do NOT poll by waking the model up repeatedly — see Token discipline).
-      Hand the waiting to a single blocking shell call that sleeps and re-checks
-      `gh` itself, returning only when something actionable appears or the window
-      closes. Then start the next pass at step (a) on the fresh state.
+      Hand the waiting to one background `wait-for-checks.sh` call, which
+      returns only when something actionable appears or the window closes. Then start the next pass at step (a) on the fresh state.
 3. On break, emit the Output-format report once with the terminal status.
 
 ### Token discipline (this loop runs on the user's main model — keep it cheap)
@@ -203,36 +226,35 @@ Two rules keep a 12-pass loop affordable:
 **1. Never spend a model turn on waiting.** A `sleep` followed by a fresh poll is
 a full model turn that did nothing. Collapse the entire wait into ONE blocking
 shell command that returns only when the CI state is actionable (or the window
-expires). `gh pr checks --watch` already does the polling; the only thing it
-lacks is waiting for checks to *appear* after a push:
+expires). Use `scripts/wait-for-checks.sh` from this skill's directory:
 
 ```bash
-# REQ is "--required" or "" (decided in Step 1). SHA is the commit you expect
-# CI to run on: the commit you just pushed, or the PR head if you didn't push.
-SHA=$(git rev-parse HEAD)
-# 1) Up to ~5 min for GitHub to attach checks to SHA. Right after a push,
-#    `gh pr checks` errors with "no checks reported" or shows a partial set, and
-#    a watcher started then exits at once on a state that isn't real yet.
-for i in $(seq 1 30); do
-  [ "$(gh pr view "$PR" --json headRefOid -q .headRefOid)" = "$SHA" ] &&
-    gh pr checks "$PR" $REQ --json name >/dev/null 2>&1 && break
-  sleep 10
-done
-# 2) Block until every check settles or the first one fails (~25 min ceiling).
-timeout 1500 gh pr checks "$PR" $REQ --watch --fail-fast --interval 60 >/dev/null 2>&1
-echo "watch exit: $?"   # 0 all passed, 8 still pending, 124 timed out, other = failure/error
-# 3) One compact snapshot the model reads. `bucket` is pass/fail/pending/skipping/cancel;
-#    gh already maps FAILURE, ERROR, TIMED_OUT and ACTION_REQUIRED to "fail".
-gh pr checks "$PR" $REQ --json name,bucket,state,link,workflow
+bash <skill-dir>/scripts/wait-for-checks.sh "$PR" $REQ --sha "$SHA"
 ```
 
-This outlasts the Bash tool's default 2-minute timeout (and its 10-minute
+(`<skill-dir>` is the directory this `SKILL.md` was loaded from.)
+
+- `REQ` is `--required` or empty (decided in Step 1).
+- `SHA` is the commit CI should run on: what you just pushed, or the PR head
+  if you didn't push (defaults to local `HEAD`).
+- It first waits up to ~5 min for the PR head to reach `SHA` and for checks to
+  register on it. Right after a push, `gh pr checks` errors with "no checks
+  reported" or shows a partial set, and a watcher started then would exit on a
+  state that isn't real yet.
+- Then `gh pr checks --watch --fail-fast` does the polling (~25 min ceiling).
+- It prints `WAIT_RESULT: settled | failing | pending | no-checks |
+  head-mismatch` and a JSON snapshot with each check's `bucket`
+  (`pass`/`fail`/`pending`/`skipping`/`cancel`). Classify from the snapshot;
+  the result line only says why the wait ended. `no-checks` usually means a
+  conflict or workflows that don't run for this PR — see Step 1.
+
+The wait outlasts the Bash tool's default 2-minute timeout (and its 10-minute
 maximum), so run it with `run_in_background` and act on the completion
 notification — still no idle model turns. In a runtime without background
-commands, set the longest timeout the tool allows, shorten `timeout 1500` to
-fit inside it, and call it again if it returns with checks still pending.
-Classify from the step 3 snapshot, not from the exit code alone. Respect the
-~30 min no-change cap before returning `NOT YET`.
+commands, pass `--timeout` small enough to fit the tool's limit and call it
+again while it returns `pending`. Respect the ~30 min no-change cap before
+returning `NOT YET`. If the script isn't available, reproduce its two phases
+by hand: wait for checks on `SHA`, then `gh pr checks --watch --fail-fast`.
 
 For reviewer-bot rate limits, use the same token discipline: one blocking shell
 wait for the cooldown, then one re-poll/re-trigger attempt. Do not wake the model
@@ -248,8 +270,9 @@ Cheap complements: pipe logs through `grep`/`tail` before they hit context, and
 prefer `git diff --stat` before a full diff.
 
 Notes:
-- Count fix attempts **per check**: a given failing check gets at most two
-  distinct fix attempts across the whole loop before it becomes `BLOCKED`.
+- Count fix attempts **per check** in the state file: a given failing check
+  gets at most two distinct fix attempts before it becomes `BLOCKED`, across
+  invocations too.
 - A newly pushed commit resets CI — always re-poll after the wait rather than
   trusting pre-push state.
 - Narrate briefly between iterations (one line: "pass N: pushed fix for X,
@@ -261,7 +284,8 @@ The in-invocation loop above covers a normal review cycle. If the user wants
 babysitting to survive across sessions or run on a fixed cadence (e.g. "check
 every 10 min for the next few hours"), use the `/loop` skill to schedule
 recurring `/babysit-pr <pr> --once` passes instead of holding one very long
-invocation open.
+invocation open. The state file is what carries the safety caps from one
+scheduled pass to the next.
 
 ## Step 0 - Resolve repo and PR
 
@@ -291,7 +315,7 @@ Resolve the PR and mode:
 - Mode flags in `$ARGUMENTS`: `--once` (or "just check"/"status only") → run a
   single pass and return. Absent any such flag, default to the **loop** (run
   passes until terminal or capped, per Loop procedure). An optional interval
-  like `--interval 90s` overrides the default wait between polls.
+  like `--interval 90` (seconds) is passed through to `wait-for-checks.sh`.
 - If no PR exists, do not stop too early:
   - If the branch is clean and has commits ahead of the base branch, summarize
     the ahead commits/diff and ask: "No PR exists yet. Create one and continue
@@ -446,56 +470,11 @@ gh pr view "$PR" --comments
 Treat pure status summaries as non-actionable. Treat concrete file/line
 findings as review work even if they are not threaded.
 
-Also scan reviewer-bot check descriptions, PR comments, and review summaries for
-rate-limit language before treating a missing review as a failure:
-
-- `rate limit`, `rate limited`, `quota`, `429`, `too many requests`,
-  `resource exhausted`, `try again later`, `temporarily unavailable`,
-  `retry after`, `limit exceeded`, `Review limit reached`,
-  `More reviews will be available in`, `PR review rate limit`,
-  `prepaid credits`, `review add-on`.
-- If a retry time or `Retry-After` value is present, record it. If not, use a
-  conservative 15-30 minute cooldown and say that it is an inferred wait.
-
-Rate-limit evidence means the reviewer did not make a code-quality finding yet.
-Report it as waiting/retry state, not as a code failure.
-
-### Reviewer bot rate limits
-
-When CodeRabbit or another review bot is rate-limited:
-
-1. Capture evidence: which bot, where it appeared (check/comment/review), latest
-   PR head SHA, timestamp, and any retry-after/cooldown text.
-   - For CodeRabbit, a warning titled `Review limit reached` with text like
-     `More reviews will be available in 21 minutes and 34 seconds` is explicit
-     cooldown evidence. Parse that duration and add a small buffer before
-     re-triggering.
-   - If the warning says prepaid credits are used up or the review add-on is not
-     enabled, include that billing note in the report; waiting may clear the
-     normal rate window, but usage-based credits require an org admin decision.
-2. Confirm required CI state separately. A rate-limited reviewer bot may be
-   advisory; do not block `DONE` unless unresolved actionable review coverage is
-   required for this repo or the user explicitly wants review-clean with that bot.
-3. Wait through the cooldown in one blocking shell call. Prefer the bot's stated
-   retry time; otherwise use 15-30 minutes depending on repo norms and remaining
-   loop budget.
-4. Re-trigger review once using the least noisy repo-supported mechanism:
-   - For CodeRabbit, if its own comment says a review can be triggered using
-     `@coderabbitai review`, post exactly that PR comment after the cooldown.
-   - If the failed/pending item is a GitHub Actions workflow or check that can be
-     rerun, rerun that workflow/check.
-   - If repo history, PR instructions, or existing bot comments show a supported
-     command such as a reviewer-bot "review again" comment, use that exact
-     convention.
-   - If no supported trigger is evident, ask before using noisy fallbacks like
-     closing/reopening the PR, pushing an empty commit, or posting a guessed bot
-     command.
-5. Re-poll after the re-trigger. If the bot reviews successfully, continue the
-   normal review-thread loop. If the same rate limit returns twice, stop the
-   active loop with `NOT YET`, include the next suggested check time, and do not
-   edit code.
-
-Never patch application code to satisfy a reviewer-bot infrastructure limit.
+Reviewer bots also post infrastructure state that is not a code finding: rate
+limits, quota exhaustion, `429`, "Review limit reached", "try again later". If a
+reviewer bot's check, comment, or review mentions a limit, cooldown, quota, or
+credits, read `references/reviewer-bots.md` before acting. Never patch
+application code to satisfy a reviewer-bot infrastructure limit.
 
 ## Step 2 - Handle failing CI
 
@@ -534,8 +513,7 @@ First rule out environment reality:
   instead of editing code.
 - Branch out of date with base (a long loop can drift). If a required
   "up-to-date" check fails and the update merges cleanly, update the branch; if
-  it would conflict, stop and ask (rebase-with-conflicts is in the ask-first
-  list).
+  it would conflict, handle it as in Step 1 (Sync, mergeability).
 - Stuck check attached to an older commit SHA. Compare the check/run head SHA
   with the PR head before editing; if it is stale, rerun/refresh rather than
   changing code.
@@ -642,6 +620,10 @@ git push
 
 Do not push multiple tiny commits in one pass unless the repo convention demands
 it.
+
+After the push, append an entry to `fix_attempts` in the state file for each
+failing check the commit targets, so the two-attempt cap holds across passes
+and scheduled runs.
 
 If the push is rejected because the remote moved, `git fetch` and
 `git merge --ff-only`/`git merge` the remote head, re-run the local check on
