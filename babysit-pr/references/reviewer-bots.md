@@ -60,3 +60,38 @@ When CodeRabbit or another review bot is rate-limited:
    edit code.
 
 Never patch application code to satisfy a reviewer-bot infrastructure limit.
+
+## Status messages that are not findings
+
+Reviewer and CI bots post a lot of text that is progress or summary, not a
+request for a change. Recognize it, count it as handled (record it in
+`handled` in the state file), and do not re-read it every pass. Matching is by
+author **and** wording — a real finding from the same bot still needs
+verifying.
+
+| Bot (login) | Message looks like | What it means |
+|---|---|---|
+| `coderabbitai[bot]` | "Currently processing new changes", "review in progress", a walkthrough / summary comment with no file:line findings | Review still running or summary only. Wait for the review for the current SHA; findings arrive as threads. |
+| `coderabbitai[bot]` | "Review limit reached", "More reviews will be available in …" | Rate limit — see above. |
+| `copilot-pull-request-reviewer[bot]` | "Copilot reviewed N out of M changed files … generated no comments" | Review finished with no findings. |
+| `chatgpt-codex-connector[bot]` | usage limit / "reached your … limit" | Rate limit — see above. |
+| `gemini-code-assist[bot]` | quota / "exhausted" | Rate limit — see above. |
+| `sourcery-ai[bot]` | rate limit / "review limit" | Rate limit — see above. |
+| `codecov[bot]`, `coveralls` | coverage report | Informational unless a *required* coverage check fails. |
+| `vercel[bot]`, `netlify[bot]`, `cloudflare-*` | preview deployment status | Informational; a failed preview is advisory unless required. |
+| `sonarcloud[bot]`, `sonarqubecloud[bot]` | "Quality Gate passed" | Informational. "Quality Gate failed" is a finding only if its check is required. |
+| `github-actions[bot]` | workflow summaries, "This PR is stale" | Informational. |
+
+Bots that post a formal `CHANGES_REQUESTED` review keep blocking the PR even
+after every finding is fixed, unless they re-review. When all of a bot
+review's findings are fixed on the current head and the bot has not
+re-reviewed after one wait cycle, dismiss that review (never a human's):
+
+```bash
+gh api -X PUT "repos/$OWNER/$REPO/pulls/$PR/reviews/$REVIEW_ID/dismissals" \
+  -f message="<!-- babysit-pr --> Findings addressed in <sha>; see replies on each thread." \
+  -f event=DISMISS
+```
+
+This needs write access and some repos restrict dismissals; if it fails,
+report the stale review as the remaining blocker instead.

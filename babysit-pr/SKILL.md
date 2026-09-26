@@ -41,8 +41,8 @@ The unit of work is a **pass**: gather current PR state, handle what is
 actionable, push once if it changed code, and classify the result as `DONE`,
 `NOT YET`, or `BLOCKED`. A single pass is the building block — but babysitting
 means **staying with the PR until it lands**, so by default this skill runs
-passes back-to-back in one invocation, sleeping between them while CI runs,
-and only returns to the user on a terminal status (`DONE` / `BLOCKED`) or a
+passes back-to-back, waiting between them on PR events or one background wait
+(never an idle model turn), and only returns to the user on a terminal status (`DONE` / `BLOCKED`) or a
 safety cap. See **Loop procedure** below. Each pass is still self-contained and
 safe to rerun manually or from an external scheduler.
 
@@ -139,6 +139,10 @@ A pass ends the loop (returns to the user) only on a **terminal** status:
 - `BLOCKED` — auth/access missing, the same check failed after two fix attempts,
   a human product/architecture decision is needed, or a risky operation needs
   approval. Return and ask.
+- The PR was merged or closed. Report it and stop.
+
+When the session is subscribed to PR events (see Waiting), ending the turn on
+`NOT YET` is waiting, not returning: the next event resumes the loop.
 
 `NOT YET` is **not** terminal in loop mode — it means "more work is in flight,
 continue the loop." Concretely:
@@ -154,11 +158,14 @@ continue the loop." Concretely:
   and an explicit "re-invoke to continue" note.
 - Same check failing after two distinct fix attempts → `BLOCKED` (never a third
   guess at the same failure).
-- Total in-loop wait exceeding ~30 min with no state change → return `NOT YET`
-  (CI may be queued/stuck; let the user decide).
-- A genuine flake/outage: rerun the failed jobs once per check per commit
-  (tracked in `reruns`), then if it still fails treat it as
-  a real failure (root-cause) or `BLOCKED`, not an infinite rerun.
+- Same review thread coming back after three fix rounds → ask the user.
+- **Stall:** nothing that would make you act has changed for 60 minutes (the
+  `stall` entry `wait-for-pr.sh --state` maintains) → return `NOT YET`, or
+  `BLOCKED` if a check is stuck queued or never reports. Waiting longer won't
+  help; let the user decide.
+- A genuine flake/outage: at most one rerun per workflow run (GitHub's
+  `attempt` must still be 1), then treat it as a real failure (root-cause) or
+  `BLOCKED`, not an infinite rerun.
 - Reviewer-bot rate limit: wait through the stated cooldown, or use a conservative
   default of 15-30 minutes if no retry time is given, then re-trigger review once.
   If the same rate limit comes back twice for the same PR, surface `NOT YET`
@@ -166,33 +173,27 @@ continue the loop." Concretely:
   passes.
 
 **Keep the caps in a state file, not only in context.** Scheduled `--once`
-passes (see Cross-session scheduling) start with no memory, so counters kept
-only in the conversation reset every run and the caps never fire. Keep one
-small JSON file per PR, shared across worktrees:
+passes and new sessions start with no memory, so counters kept only in the
+conversation reset every run and the caps never fire. Keep one small JSON file
+per PR, shared across worktrees and never committed:
 
 ```bash
 STATE="$(git rev-parse --path-format=absolute --git-common-dir)/babysit-pr/$PR.json"
-mkdir -p "$(dirname "$STATE")"
-[ -f "$STATE" ] || echo '{"passes":0,"fix_attempts":{},"reruns":{},"rate_limits":[]}' > "$STATE"
+mkdir -p "$(dirname "$STATE")"; [ -s "$STATE" ] || echo '{}' > "$STATE"
 ```
 
-- `passes`: incremented every pass; the 12-pass cap applies per invocation, but
-  a large total across runs is worth mentioning in the report.
-- `fix_attempts`: `{ "<check>": [{"sha": "...", "summary": "..."}] }`, one
-  entry per pushed fix for that check. Two entries and a third failure →
-  `BLOCKED`.
-- `reruns`: `{ "<check>": "<sha>" }` — the commit a rerun was already spent on.
-- `rate_limits`: `[{"bot": "...", "at": "<ISO time>", "retry_after": "..."}]`.
-
-Read it at the start of Step 0, update it with `jq` (or rewrite it) whenever a
-counter changes, and delete it once the PR is merged or closed. It lives inside
-`.git`, so it is never committed.
+It holds fix attempts per check and per thread, reruns and retriggers spent,
+rate-limit hits, the stall clock, and a fingerprint of every comment already
+handled. Read `references/state-file.md` for the keys the first time you create
+or update it. Read it at the start of every pass; delete it once the PR is
+merged or closed.
 
 Ask before destructive or high-risk actions:
 
 - Force-push.
 - Merge.
 - Rebase with conflicts.
+- Closing and reopening the PR, or pushing an empty commit, to kick CI.
 - Applying a wide migration/backfill/schema change.
 - Resolving a review thread whose finding is real but the fix is product-level
   or architectural.
@@ -207,85 +208,102 @@ is hit.
    If Artifact-first preflight found instructions, carry their constraints into
    Step 0 and record which ones were verified against live PR state.
 2. **Pass loop** — repeat until terminal or capped:
-   a. Steps 1–4: sync with the remote head, poll fresh state (checks,
+   a. Steps 1–4: sync with the remote head, poll fresh state (PR state, checks,
       mergeability, review decision, threads), root-cause failures, verify
       review threads, apply fixes, push at most once.
    b. Classify per Step 5.
    c. If `DONE` or `BLOCKED` → break and return.
-   d. If `NOT YET` → **block until state changes, then loop** (do not return,
-      and do NOT poll by waking the model up repeatedly — see Token discipline).
-      Hand the waiting to one background `wait-for-checks.sh` call, which
-      returns only when something actionable appears or the window closes. Then start the next pass at step (a) on the fresh state.
+   d. If `NOT YET` → **wait for something to change, then loop** (do not
+      return, and do NOT poll by waking the model up repeatedly — see Waiting).
+      Then start the next pass at step (a) on the fresh state.
 3. On break, emit the Output-format report once with the terminal status.
 
-### Token discipline (this loop runs on the user's main model — keep it cheap)
+### Waiting
 
-The expensive resource is **model turns over a growing context**, not reasoning.
-Two rules keep a 12-pass loop affordable:
+Wait for **CI and reviews together**. A wait that only watches CI hides a
+review posted at minute 2 of a 20-minute run until the run ends — and the fix
+for it then costs another full CI cycle. Use the first of these the runtime
+supports:
 
-**1. Never spend a model turn on waiting.** A `sleep` followed by a fresh poll is
-a full model turn that did nothing. Collapse the entire wait into ONE blocking
-shell command that returns only when the CI state is actionable (or the window
-expires). Use `scripts/wait-for-checks.sh` from this skill's directory:
+**1. PR activity events (preferred).** If the runtime can subscribe the session
+to PR activity (for example `subscribe_pr_activity` in Claude Code on the web),
+subscribe once after the first pass. On `NOT YET`, end the turn with a one-line
+status: each incoming event (new comment or review, CI failure, CI completion)
+wakes the session, and you run a pass on fresh state. Waiting then costs no
+turns and has no time ceiling. Events can be late or missed, so if the runtime
+can also schedule a message to this session (for example `send_later`), set a
+check-in about an hour out and re-arm it each time; when it fires, run a pass.
+Unsubscribe and drop the check-in on `DONE`, `BLOCKED`, or when the PR is
+merged or closed.
+
+**2. The wait script.** Otherwise run `scripts/wait-for-pr.sh` from this
+skill's directory (`<skill-dir>` is the directory this `SKILL.md` was loaded
+from) as a single background command:
 
 ```bash
-bash <skill-dir>/scripts/wait-for-checks.sh "$PR" $REQ --sha "$SHA"
+bash <skill-dir>/scripts/wait-for-pr.sh "$PR" $REQ --sha "$SHA" --state "$STATE"
 ```
 
-(`<skill-dir>` is the directory this `SKILL.md` was loaded from.)
-
-- `REQ` is `--required` or empty (decided in Step 1).
-- `SHA` is the commit CI should run on: what you just pushed, or the PR head
-  if you didn't push (defaults to local `HEAD`).
-- It first waits up to ~5 min for the PR head to reach `SHA` and for checks to
-  register on it. Right after a push, `gh pr checks` errors with "no checks
-  reported" or shows a partial set, and a watcher started then would exit on a
-  state that isn't real yet.
-- Then `gh pr checks --watch --fail-fast` does the polling (~25 min ceiling).
-- It prints `WAIT_RESULT: settled | failing | pending | no-checks |
-  head-mismatch` and a JSON snapshot with each check's `bucket`
-  (`pass`/`fail`/`pending`/`skipping`/`cancel`). Classify from the snapshot;
-  the result line only says why the wait ended. `no-checks` usually means a
-  conflict or workflows that don't run for this PR — see Step 1.
+- `REQ` is `--required` or empty (decided in Step 1). `SHA` is the commit CI
+  should run on: what you just pushed, or the PR head if you didn't push.
+- It waits for the PR head to reach `SHA` and for checks to register on it,
+  then polls PR state, checks, and review activity (new or edited comments,
+  submitted reviews, thread changes) every `--interval` (default 60s).
+- After the first actionable event it keeps watching for `--settle` (default
+  60s), so a review and a CI failure that land together come back as one
+  wake-up and one push.
+- If a reviewer bot re-reviews every push after CI, pass `--review-grace 300`
+  (or the bot's usual delay) so a green result waits for that review instead
+  of reporting `DONE` early.
+- It prints `WAIT_RESULT:` with one or more of `failing`, `new-review`,
+  `settled`, `closed`, `head-moved`, `head-mismatch`, `no-checks`, `timeout`,
+  then one JSON object: PR state, the checks snapshot (with `bucket` per
+  check), and `stall.unchanged_minutes`. Classify from the JSON; the reasons
+  only say why the wait ended. `no-checks` usually means a conflict or
+  workflows that don't run for this PR — see Step 1.
 
 The wait outlasts the Bash tool's default 2-minute timeout (and its 10-minute
 maximum), so run it with `run_in_background` and act on the completion
 notification — still no idle model turns. In a runtime without background
 commands, pass `--timeout` small enough to fit the tool's limit and call it
-again while it returns `pending`. Respect the ~30 min no-change cap before
-returning `NOT YET`. If the script isn't available, reproduce its two phases
-by hand: wait for checks on `SHA`, then `gh pr checks --watch --fail-fast`.
+again while it returns `timeout`. If the script isn't available, reproduce it
+by hand in one shell loop: wait for the head and checks on `SHA`, then poll
+`gh pr view`, `gh pr checks`, and the review-thread query until one changes.
 
-For reviewer-bot rate limits, use the same token discipline: one blocking shell
-wait for the cooldown, then one re-poll/re-trigger attempt. Do not wake the model
-every minute to say the bot is still rate-limited.
+For reviewer-bot rate limits, use the same discipline: one blocking wait for
+the cooldown, then one re-poll/re-trigger attempt. Do not wake the model every
+minute to say the bot is still rate-limited.
 
-**2. Read heavy things in an isolated subagent, not the main thread.** Failing
-CI logs and the files a review thread cites are large and would otherwise sit in
-context for every remaining pass (context grows each pass → later turns cost
-more). Delegate the *reading* to a subagent that returns a compact finding; the
-main driver keeps the *decisions*. See Step 2 and Step 3.
+### Token discipline (this loop runs on the user's main model — keep it cheap)
 
-Cheap complements: pipe logs through `grep`/`tail` before they hit context, and
-prefer `git diff --stat` before a full diff.
+The expensive resource is **model turns over a growing context**, not
+reasoning. Never spend a model turn on waiting (above), and **read heavy things
+in an isolated subagent, not the main thread.** Failing CI logs and the files a
+review thread cites are large and would otherwise sit in context for every
+remaining pass (context grows each pass → later turns cost more). Delegate the
+*reading* to a subagent that returns a compact finding; the main driver keeps
+the *decisions*. See Step 2 and Step 3.
+
+Cheap complements: `scripts/failed-log.sh` instead of full logs, the `handled`
+fingerprints in the state file instead of re-reading old threads, and
+`git diff --stat` before a full diff.
 
 Notes:
-- Count fix attempts **per check** in the state file: a given failing check
-  gets at most two distinct fix attempts before it becomes `BLOCKED`, across
-  invocations too.
 - A newly pushed commit resets CI — always re-poll after the wait rather than
   trusting pre-push state.
 - Narrate briefly between iterations (one line: "pass N: pushed fix for X,
-  waiting on CI") so the user can follow a long-running loop.
+  waiting on CI") so the user can follow a long-running loop. The first time
+  the current SHA goes all green, say so once.
 
 ### Cross-session scheduling (optional)
 
 The in-invocation loop above covers a normal review cycle. If the user wants
 babysitting to survive across sessions or run on a fixed cadence (e.g. "check
-every 10 min for the next few hours"), use the `/loop` skill to schedule
-recurring `/babysit-pr <pr> --once` passes instead of holding one very long
-invocation open. The state file is what carries the safety caps from one
-scheduled pass to the next.
+every 10 min for the next few hours") and PR activity events aren't available,
+use the `/loop` skill to schedule recurring `/babysit-pr <pr> --once` passes
+instead of holding one very long invocation open. The state file is what
+carries the safety caps and handled comments from one scheduled pass to the
+next.
 
 ## Step 0 - Resolve repo and PR
 
@@ -315,7 +333,7 @@ Resolve the PR and mode:
 - Mode flags in `$ARGUMENTS`: `--once` (or "just check"/"status only") → run a
   single pass and return. Absent any such flag, default to the **loop** (run
   passes until terminal or capped, per Loop procedure). An optional interval
-  like `--interval 90` (seconds) is passed through to `wait-for-checks.sh`.
+  like `--interval 90` (seconds) is passed through to `wait-for-pr.sh`.
 - If no PR exists, do not stop too early:
   - If the branch is clean and has commits ahead of the base branch, summarize
     the ahead commits/diff and ask: "No PR exists yet. Create one and continue
@@ -350,6 +368,44 @@ If local branch does not match PR head, say so before editing.
 ## Step 1 - Poll current state
 
 Gather all status before acting.
+
+### Sync, mergeability, and review decision
+
+Start every pass by syncing with the remote PR head. Bots (pre-commit.ci,
+autofix bots) and other agents push to PR branches; editing a stale checkout
+ends in a rejected push or a fix for code that already changed.
+
+```bash
+git fetch origin "$HEAD_BRANCH" "$BASE_BRANCH"
+git merge --ff-only "origin/$HEAD_BRANCH"   # fails if local and remote diverged
+gh pr view "$PR" --json state,headRefOid,mergeable,mergeStateStatus,reviewDecision,isDraft,isCrossRepository,maintainerCanModify
+```
+
+- `state: MERGED` or `CLOSED` — stop now: no pushes, no replies, no reruns.
+  Delete the state file, unsubscribe from PR events, and report the final
+  state. If real findings were still unaddressed when it merged, list them
+  and offer a follow-up PR; don't open one unasked.
+- If `--ff-only` fails because local has unpushed commits *and* the remote moved,
+  stop and say so. Do not force-push over someone else's commits.
+- `mergeable: UNKNOWN` means GitHub is still computing it; re-query after a few
+  seconds before deciding anything.
+- `mergeable: CONFLICTING` / `mergeStateStatus: DIRTY` — the PR conflicts with
+  its base. Many `pull_request` workflows do not run at all on a conflicted PR,
+  so waiting for CI is pointless until this is fixed. Merge the base into the
+  head (`git merge "origin/$BASE_BRANCH"`, never a rebase or force-push without
+  asking). Resolve it yourself only when the conflict is mechanical (lockfiles
+  and generated files regenerated with the repo's own tooling, adjacent-line
+  edits); when both sides changed the same logic, ask.
+- `mergeStateStatus: BEHIND` — base moved but no conflict. Update the branch
+  (`gh pr update-branch "$PR"`) only when a required up-to-date check or
+  ruleset demands it; otherwise report it and move on.
+- `reviewDecision: CHANGES_REQUESTED` blocks merge even with green CI and every
+  thread resolved. `REVIEW_REQUIRED` means a required approval is missing. You
+  cannot supply either; see `DONE` below.
+- `isDraft: true` — some CI and reviewer bots (CodeRabbit by default) skip
+  drafts. Do not mark the PR ready yourself unless the user asked.
+- `isCrossRepository: true` with `maintainerCanModify: false` — you cannot push
+  to the fork. Report fixes as suggestions instead of editing.
 
 ### CI checks
 
@@ -388,42 +444,26 @@ Classify each check by `bucket`:
   **if required**; if advisory, report it but do not loop on it or block
   `DONE`. `ACTION_REQUIRED` on a fork PR usually means a maintainer must
   approve the workflow run — that is `BLOCKED`, not a code failure.
-- `cancel` / `skipping` - inspect context before treating as failure (a
-  superseded run is cancelled normally when a newer push arrives).
+- `cancel` / `skipping` - inspect context before treating as failure. A
+  cancelled run is only *superseded* (ignore it) when a newer run of the same
+  workflow exists for the current head SHA; otherwise a cancel on the current
+  head is a rerun candidate, not a code failure.
 
-### Sync, mergeability, and review decision
+**Required checks that never report.** If a required check stays `EXPECTED`
+(or missing) while no workflow run for it is queued or in progress on the head
+SHA, the usual cause is a path filter or a workflow condition that skips this
+PR. Retrigger once per head SHA, recorded in `retriggers`: update the branch if
+it is behind (`gh pr update-branch "$PR"`); closing and reopening the PR is the
+other retrigger and needs the user's approval. If it still doesn't report, stop
+retrying and report it (`BLOCKED`, naming the check) — it needs a workflow or
+ruleset change, not a code change in this PR.
 
-Start every pass by syncing with the remote PR head. Bots (pre-commit.ci,
-autofix bots) and other agents push to PR branches; editing a stale checkout
-ends in a rejected push or a fix for code that already changed.
-
-```bash
-git fetch origin "$HEAD_BRANCH" "$BASE_BRANCH"
-git merge --ff-only "origin/$HEAD_BRANCH"   # fails if local and remote diverged
-gh pr view "$PR" --json headRefOid,mergeable,mergeStateStatus,reviewDecision,isDraft,isCrossRepository,maintainerCanModify
-```
-
-- If `--ff-only` fails because local has unpushed commits *and* the remote moved,
-  stop and say so. Do not force-push over someone else's commits.
-- `mergeable: UNKNOWN` means GitHub is still computing it; re-query after a few
-  seconds before deciding anything.
-- `mergeable: CONFLICTING` / `mergeStateStatus: DIRTY` — the PR conflicts with
-  its base. Many `pull_request` workflows do not run at all on a conflicted PR,
-  so waiting for CI is pointless until this is fixed. Merge the base into the
-  head (`git merge "origin/$BASE_BRANCH"`, never a rebase or force-push without
-  asking). Resolve it yourself only when the conflict is mechanical (lockfiles
-  and generated files regenerated with the repo's own tooling, adjacent-line
-  edits); when both sides changed the same logic, ask.
-- `mergeStateStatus: BEHIND` — base moved but no conflict. Update the branch
-  (`gh pr update-branch "$PR"`) only when a required up-to-date check or
-  ruleset demands it; otherwise report it and move on.
-- `reviewDecision: CHANGES_REQUESTED` blocks merge even with green CI and every
-  thread resolved. `REVIEW_REQUIRED` means a required approval is missing. You
-  cannot supply either; see `DONE` below.
-- `isDraft: true` — some CI and reviewer bots (CodeRabbit by default) skip
-  drafts. Do not mark the PR ready yourself unless the user asked.
-- `isCrossRepository: true` with `maintainerCanModify: false` — you cannot push
-  to the fork. Report fixes as suggestions instead of editing.
+**Merge queue.** If the repo uses a merge queue, check whether the PR is in it
+(GraphQL: `pullRequest(number:$pr){ isInMergeQueue mergeQueueEntry{ state
+position } }`). While it is queued, do not push anything that
+isn't fixing a failure the queue reported — a push removes the PR from the
+queue. If GitHub removed it from the queue and the head hasn't changed since,
+read why (the queue's failed check) before doing anything else.
 
 ### Review threads and comments
 
@@ -439,7 +479,8 @@ query($owner:String!,$repo:String!,$pr:Int!,$endCursor:String){
         pageInfo{ hasNextPage endCursor }
         nodes{
           id isResolved isOutdated path line
-          comments(first:50){ totalCount nodes{ id body author{login} authorAssociation url } }
+          comments(first:50){ totalCount nodes{ id body author{login} authorAssociation url
+            createdAt lastEditedAt pullRequestReview{ id state } } }
         }
       }
     }
@@ -452,6 +493,15 @@ query($owner:String!,$repo:String!,$pr:Int!,$endCursor:String){
 silently truncated. If a thread's `comments.totalCount` exceeds what was
 fetched, read the rest before judging it — the latest reply may already settle
 it.
+
+Ignore comments whose `pullRequestReview.state` is `PENDING`: the reviewer
+hasn't submitted them yet, so they aren't feedback. The same goes for
+`gh pr view --json reviews` entries in state `PENDING`.
+
+Skip items you already handled: compare each thread's (and each top-level
+comment's) fingerprint with `handled` in the state file. A match means nothing
+new — don't re-read or re-judge it. A mismatch means a new reply or an edited
+comment, and the item is live again even if your reply was the last one.
 
 Keep threads that are unresolved and actionable. Ignore already-addressed
 threads only after confirming the cited code has the fix. `isOutdated: true`
@@ -495,12 +545,21 @@ Do not propose large refactors; identify the smallest real cause.
 The main driver keeps the *decision* (whether to apply the fix, dispute it, or
 rerun) — only the bulky *reading* is offloaded. For a small/obvious log, just
 read it inline; a subagent has fixed spin-up overhead and isn't worth it for a
-few lines. Fetch logs trimmed when reading inline:
+few lines.
+
+Start with `scripts/failed-log.sh`, which is often enough on its own:
 
 ```bash
-gh run view <run-id> --log-failed | grep -iE 'error|fail|✗|panic' | tail -80
-gh run view --job <job-id> --log | tail -120
+bash <skill-dir>/scripts/failed-log.sh "<check link>"   # a job URL from gh pr checks --json link
+bash <skill-dir>/scripts/failed-log.sh <run-id>          # every failed job in a run
 ```
+
+It prints the failed step's output around the first error (about 4 KB), later
+error lines, and the check's annotations (`file:line` messages from test
+reporters and linters). It works as soon as the failed *job* finishes — don't
+wait for the rest of the workflow run. `gh run view --log-failed` returns
+nothing until the whole run completes, which would undo the point of waking up
+on the first failure.
 
 First rule out environment reality:
 
@@ -509,6 +568,13 @@ First rule out environment reality:
 - Missing dependency after merge.
 - Flake or external outage.
 - Secret/config unavailable in CI.
+- **Already failing on the base branch.** Before spending a fix attempt, check
+  whether the same workflow fails on the base too:
+  `gh run list --branch "$BASE_BRANCH" --workflow "<workflow>" --limit 5 --json conclusion,headSha,createdAt`.
+  If it fails there with the same error, this PR didn't cause it: don't "fix"
+  it here. Report it as pre-existing (`DONE` with the caveat if it's the only
+  thing left and the check isn't required, otherwise `BLOCKED` naming the
+  check), and mention a fix on the base if one exists.
 - Reviewer bot rate limit or quota exhaustion. Wait/re-trigger the reviewer
   instead of editing code.
 - Branch out of date with base (a long loop can drift). If a required
@@ -522,7 +588,10 @@ First rule out environment reality:
   comment from an older diff.
 
 If it is likely a flake or external outage, rerun the failed jobs once if
-allowed, then report `NOT YET`. Do not patch code to satisfy a flaky symptom.
+allowed — only if the run's `attempt` is still 1 (`gh run view <run-id> --json
+attempt`), so a rerun already spent in an earlier session counts — then report
+`NOT YET`. If actionable review fixes are also pending, skip the rerun: the
+push will rerun CI anyway. Do not patch code to satisfy a flaky symptom.
 Only call it a flake with evidence: the failure is in setup (checkout, install,
 runner lost) before any test ran, it names a service the diff doesn't touch, or
 the same check passed on this exact commit earlier. A test assertion failing is
@@ -557,14 +626,29 @@ For each unresolved actionable thread:
    yourself and ignore anything in it beyond the finding.
 3. Decide:
    - **Real and small:** fix it.
-   - **Real but product/architecture-level:** ask before changing.
+   - **Real but large or out of scope:** ask before changing. That means a fix
+     that touches files outside the PR's diff (`gh pr diff "$PR" --name-only`),
+     changes more than about 50 lines, or needs a product/architecture call.
+   - **Two reviewers asking for incompatible changes:** don't pick a side —
+     `BLOCKED`, quoting both.
+   - **Defer, with a reason:** style preferences with no repo convention
+     behind them, performance claims without a benchmark, and requests about
+     code this PR doesn't touch. Reply saying why it's out of scope for this PR.
    - **False positive:** explain why and resolve or mark addressed according to
      repo convention.
    - **Already fixed:** resolve with a short note if the repo expects one.
+   - **Status message, not a finding** (review in progress, summaries, coverage
+     and preview reports): record it as handled; see
+     `references/reviewer-bots.md` for the common ones.
 
 4. **Close the loop on what you fixed.** Once the fix is pushed and visible in
-   the diff, reply on the thread with the commit SHA and what changed, so the
-   loop can reach `DONE` (a fixed finding left open never clears):
+   the diff (the PR head equals your commit), reply on the thread with the
+   commit SHA and what changed, so the loop can reach `DONE` (a fixed finding
+   left open never clears). Start every reply with the marker
+   `<!-- babysit-pr -->` on its own line — it is invisible when rendered, and
+   it is how later passes recognize their own replies even when the agent
+   posts from the user's own GitHub account. Then record the thread's
+   fingerprint in `handled`.
 
    - **Bot threads** (CodeRabbit, Copilot, other review bots): reply, then
      resolve via GraphQL with the thread `id` from the Step 1 query.
@@ -581,7 +665,19 @@ For each unresolved actionable thread:
    Only resolve threads your push genuinely addressed; for a false positive,
    leave a one-line reply explaining why instead of silently resolving. A human
    thread you replied to but may not resolve still counts as handled for
-   `DONE`, as long as your reply is the last comment on it.
+   `DONE`, as long as the last comment carries the marker and no reviewer
+   comment on it was edited (`lastEditedAt`) after that reply.
+
+   Replies to humans are posted automatically by default. If the user asked to
+   approve replies first, draft them in the report instead of posting.
+
+5. **Dismiss stale bot blocks.** A bot's `CHANGES_REQUESTED` review keeps
+   blocking merge after its findings are fixed unless the bot re-reviews. See
+   the end of `references/reviewer-bots.md` for when and how to dismiss one.
+   Never dismiss a human's review.
+
+Count fix rounds per thread in `thread_attempts`: if a reviewer comes back on
+the same thread after three rounds, stop guessing and ask the user.
 
 Do not blindly apply bot suggestions (CodeRabbit, Copilot, or otherwise). The
 value is in distinguishing real findings from noise.
@@ -641,7 +737,8 @@ Use only when:
   — advisory checks don't gate).
 - The PR is not conflicting (`mergeable` is not `CONFLICTING`) and not a draft
   unless the user wants it kept as one.
-- No unresolved actionable review threads remain.
+- No unresolved actionable review threads remain, and every item's fingerprint
+  matches `handled` (no new replies or edits since you handled it).
 - `reviewDecision` is not `CHANGES_REQUESTED` with requested changes you have
   not yet pushed and replied to.
 - Local branch is pushed.
@@ -671,7 +768,7 @@ wait-and-re-poll step of the Loop procedure and continues to the next pass. You
 only surface `NOT YET` to the user when:
 
 - The user asked for a single pass (`--once` / status-only), or
-- You hit a safety cap (max passes, or the ~30 min no-change wait).
+- You hit a safety cap (max passes, or the 60-minute stall).
 
 When you do surface it, include:
 
@@ -694,6 +791,9 @@ Use when:
 - Local and remote PR heads diverged, or the PR is on a fork you cannot push to.
 - A conflict with the base branch touches the same logic on both sides.
 - A fork PR's workflows are waiting for maintainer approval (`ACTION_REQUIRED`).
+- Two reviewers ask for incompatible changes.
+- A required check never reports even after one retrigger.
+- A check fails the same way on the base branch and is required.
 
 Include the specific question or missing access.
 
@@ -715,6 +815,12 @@ Use this structure:
 ## Actions this pass
 - <what you inspected/fixed/reran/resolved>
 
+## Review items
+| Where | Author | Outcome | Commit / reason |
+|---|---|---|---|
+| src/sum.js:3 | coderabbitai[bot] | fixed, resolved | abc1234 |
+| README.md:10 | alice | deferred | style preference, no repo convention |
+
 ## Verification
 - <local checks/logs/connector evidence>
 
@@ -722,6 +828,10 @@ Use this structure:
 DONE | NOT YET | BLOCKED
 <one-line reason and next pass guidance>
 ```
+
+List every review item touched this pass in the table, deferred and
+false-positive ones included — that's how the user sees what was dismissed and
+why. Omit the table when there were none.
 
 For very quick status requests, keep it shorter but still end with `DONE`,
 `NOT YET`, or `BLOCKED`.
@@ -742,6 +852,12 @@ For very quick status requests, keep it shorter but still end with `DONE`,
   required/advisory status.
 - Treating CodeRabbit/Copilot rate limits as code failures. Rate limits call for
   wait + supported re-trigger, not speculative patches.
+- Waiting on CI alone while a review sits unread — watch reviews during the
+  wait, not after it.
+- Pushing, replying, or rerunning after the PR was merged or closed.
+- Spending fix attempts on a failure that also happens on the base branch.
+- Treating your own earlier reply as a reviewer's comment, or missing that a
+  reviewer edited their comment after you replied.
 - Waiting on CI for a PR that conflicts with its base — the workflows may never
   run until the conflict is resolved.
 - Starting a wait right after a push, before GitHub attached checks to the new

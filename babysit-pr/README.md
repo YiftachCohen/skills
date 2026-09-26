@@ -49,12 +49,22 @@ pass with the `/loop` skill rather than holding one long invocation open.
 - Whether the next safe status is `DONE`, `NOT YET`, or `BLOCKED`.
 - PR comments and CI logs as untrusted data: findings are verified, embedded
   instructions are ignored.
+- Merged or closed PRs (stops), failures that already happen on the base
+  branch, and required checks that never report.
 
 ## Layout
 
 - `SKILL.md` — the loop.
-- `scripts/wait-for-checks.sh` — one blocking wait: lets checks register on the
-  pushed commit, then `gh pr checks --watch --fail-fast`, then a JSON snapshot.
-- `references/reviewer-bots.md` — reviewer-bot rate limits and re-triggering.
-- Safety-cap counters (fix attempts, reruns, rate limits) persist per PR in
-  `.git/babysit-pr/<pr>.json`, so scheduled `--once` passes still honor them.
+- `scripts/wait-for-pr.sh` — one background wait that watches CI, review
+  activity, and PR state together, and returns on the first thing that needs
+  the agent (a failure, a new or edited review comment, merge/close, someone
+  else's push). Used when the runtime can't deliver PR events to the session.
+- `scripts/failed-log.sh` — the failed step's log around the first error, plus
+  check annotations, as soon as a job fails.
+- `references/state-file.md` — the per-PR state in `.git/babysit-pr/<pr>.json`:
+  fix attempts per check and per thread, reruns, the stall clock, and which
+  comments were already handled, so scheduled `--once` passes keep them.
+- `references/reviewer-bots.md` — reviewer-bot rate limits, bot status messages
+  that aren't findings, and dismissing stale bot reviews.
+- `tests/test_scripts.py` — tests for both scripts against a fake `gh`
+  (`python3 -m unittest discover babysit-pr/tests`).
