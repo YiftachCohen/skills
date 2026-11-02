@@ -23,6 +23,8 @@ jobs:
         run: node --check atlas/templates/viewer.js
       - name: babysit-pr script tests
         run: python3 -m unittest discover babysit-pr/tests -v
+      - name: demo-page build script parses
+        run: node --check demo-page/scripts/build.mjs
       - name: Shell scripts parse
         run: for f in */scripts/*.sh; do bash -n "$f"; done
       - name: Skill descriptions fit the 1024-char limit

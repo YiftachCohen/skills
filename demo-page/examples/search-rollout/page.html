@@ -1,0 +1,145 @@
+<title>Admin search rollout</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400..600;1,8..60,400&display=swap">
+<style data-journal></style>
+
+<main class="page">
+  <header class="masthead">
+    <p class="kicker">Platform · Showcase and proposal</p>
+    <h1>Admin search now answers in 38 milliseconds</h1>
+    <p class="deck">Support agents search the accounts list around 30 times a day each. Every search used to wait on a Postgres scan over 4.1 million rows. It now runs against an index in the agent’s browser, kept current by our change feed, the service that already streams every account edit.</p>
+    <p class="byline"><span>By <strong>Yiftach Cohen</strong></span><span>Nov. 2, 2026</span></p>
+    <dl class="facts">
+      <div><dt>Status</dt><dd>Live for 3 tenants</dd></div>
+      <div><dt>Ask</dt><dd>Choose how to reach the 9 largest tenants, by Fri., Nov. 13</dd></div>
+      <div><dt>Code</dt><dd>PR #4182</dd></div>
+      <div><dt>Flag</dt><dd><code>admin_local_search</code></dd></div>
+    </dl>
+  </header>
+
+  <figure class="fig breakout">
+    <div class="fig-stage" data-figure="search" data-ss-fill></div>
+    <figcaption>Typing “acme” in the accounts list. Each keystroke is answered by the local index, and the Network panel records no search requests.</figcaption>
+  </figure>
+
+  <section class="sec" aria-labelledby="results-h">
+    <h2 id="results-h">Agents search twice as often, and Postgres is quieter</h2>
+    <p>We turned the flag on for three mid-size tenants on Oct. 6. Agents searched more than twice as often once results kept up with their typing, and the database had a quieter afternoon.</p>
+    <div class="table-wrap">
+      <table class="metrics">
+        <thead>
+          <tr><th scope="col">Measure</th><th scope="col">Before</th><th scope="col">After</th><th scope="col">Change</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>p95 search latency</td><td class="before">2,400 ms</td><td class="after">38 ms</td><td class="good">−98%</td></tr>
+          <tr><td>Searches per agent, per day</td><td class="before">31</td><td class="after">74</td><td class="good">+139%</td></tr>
+          <tr><td>Postgres CPU, 9 a.m.–5 p.m.</td><td class="before">71%</td><td class="after">44%</td><td class="good">−27 pts</td></tr>
+          <tr><td>Index download, per session</td><td class="before">none</td><td class="after">1.8 MB</td><td>new cost</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="caption">Measured Oct. 6 to Nov. 2 on the three pilot tenants, against the four weeks before. Source: the admin search dashboard.</p>
+  </section>
+
+  <section class="sec" aria-labelledby="how-h">
+    <h2 id="how-h">The index lives in the browser</h2>
+    <p>Two paths feed a search worker that runs in the agent’s browser. A snapshot arrives once when the agent signs in; small updates follow every five seconds. Queries never leave the browser.</p>
+    <figure class="fig breakout">
+      <div class="panel">
+        <svg class="diagram" viewBox="0 0 880 272" role="img" aria-labelledby="dg-t">
+          <title id="dg-t">Postgres feeds a snapshot through the index builder and CDN, and updates through the change feed and events API. Both reach a search worker in the browser, where queries stop.</title>
+          <defs>
+            <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path class="dg-arrow" d="M0 0 L8 4 L0 8 Z"/>
+            </marker>
+          </defs>
+          <text class="dg-lane" x="240" y="26">SNAPSHOT · ONCE PER SESSION</text>
+          <text class="dg-lane" x="240" y="160">UPDATES · EVERY 5 S</text>
+
+          <rect class="dg-node" x="20" y="40" width="150" height="192" rx="3"/>
+          <text class="dg-title" x="34" y="66">Postgres</text>
+          <text class="dg-sub" x="34" y="86">accounts table</text>
+          <text class="dg-sub" x="34" y="103">4.1M rows</text>
+
+          <rect class="dg-node" x="240" y="40" width="150" height="60" rx="3"/>
+          <text class="dg-title" x="254" y="66">Index builder</text>
+          <text class="dg-sub" x="254" y="86">cron, every 15 min</text>
+
+          <rect class="dg-node" x="460" y="40" width="150" height="60" rx="3"/>
+          <text class="dg-title" x="474" y="66">CDN</text>
+          <text class="dg-sub" x="474" y="86">snapshot, 1.8 MB</text>
+
+          <rect class="dg-node" x="240" y="172" width="150" height="60" rx="3"/>
+          <text class="dg-title" x="254" y="198">Change feed</text>
+          <text class="dg-sub" x="254" y="218">logical replication</text>
+
+          <rect class="dg-node" x="460" y="172" width="150" height="60" rx="3"/>
+          <text class="dg-title" x="474" y="198">Events API</text>
+          <text class="dg-sub" x="474" y="218">SSE, batched 5 s</text>
+
+          <rect class="dg-node focus" x="680" y="40" width="180" height="192" rx="3"/>
+          <text class="dg-title" x="694" y="66">Search worker</text>
+          <text class="dg-sub" x="694" y="86">in the agent’s browser</text>
+          <text class="dg-sub" x="694" y="103">MiniSearch, p95 38 ms</text>
+          <text class="dg-note" x="694" y="214">Queries stop here</text>
+
+          <path class="dg-edge" d="M170 70 H238" marker-end="url(#arr)"/>
+          <path class="dg-edge" d="M390 70 H458" marker-end="url(#arr)"/>
+          <path class="dg-edge" d="M610 70 H678" marker-end="url(#arr)"/>
+          <path class="dg-edge async" d="M170 202 H238" marker-end="url(#arr)"/>
+          <path class="dg-edge async" d="M390 202 H458" marker-end="url(#arr)"/>
+          <path class="dg-edge async" d="M610 202 H678" marker-end="url(#arr)"/>
+        </svg>
+      </div>
+      <figcaption>Solid lines run once per session; dashed lines carry updates every five seconds.</figcaption>
+    </figure>
+    <ol class="steps">
+      <li><p><strong>The agent signs in.</strong> The console downloads the tenant’s index snapshot from the CDN, 1.8 MB gzipped, and keeps it for the session.</p></li>
+      <li><p><strong>A Web Worker loads the snapshot.</strong> Searches run there, off the main thread, so typing never stutters while results update.</p></li>
+      <li><p><strong>Changes arrive every five seconds.</strong> Account edits, deletions and visibility changes reach the worker over the events stream the console already holds open. Opening an account always checks permissions on the server, so a stale index can show a name but never its data.</p></li>
+      <li><p><strong>A stale index falls back to the server.</strong> If the stream drops and the index falls two minutes behind, search goes back to Postgres and the field says so.</p></li>
+    </ol>
+    <details>
+      <summary>The fallback rule, from <code>search/worker.ts</code></summary>
+      <pre><code>const STALE_AFTER_MS = 2 * 60_000
+
+export function source(index: IndexState, now = Date.now()) {
+  if (!index.ready) return 'server'
+  if (now - index.lastDeltaAt > STALE_AFTER_MS) return 'server'
+  return 'local'
+}</code></pre>
+    </details>
+  </section>
+
+  <section class="sec" aria-labelledby="ask-h">
+    <h2 id="ask-h">The decision: how do we reach the nine largest tenants?</h2>
+    <p>Both options switch on the 203 tenants whose index is under 5 MB next week; they differ only on the rest. The other nine have indexes from 6 to 22 MB, too large to download at sign-in. They are also our biggest accounts, and they file 40 percent of search-related tickets.</p>
+    <div class="options">
+      <article class="option">
+        <div class="option-head"><span class="tag">Option A</span><h3>Cap the index at 5 MB</h3></div>
+        <dl>
+          <div><dt>Ships</dt><dd>Tue., Nov. 17</dd></div>
+          <div><dt>Gives</dt><dd>Local search for 203 tenants. The nine large tenants keep server search at 2.4 seconds.</dd></div>
+          <div><dt>Costs</dt><dd>Nothing new to run.</dd></div>
+        </dl>
+      </article>
+      <article class="option" data-recommended>
+        <div class="option-head"><span class="tag">Option B · Recommended</span><h3>Shard the index by region</h3></div>
+        <dl>
+          <div><dt>Ships</dt><dd>Tue., Dec. 1</dd></div>
+          <div><dt>Gives</dt><dd>Local search for every tenant. Each agent downloads only the accounts in their support region (EU, US or APAC), under 4 MB for all nine.</dd></div>
+          <div><dt>Costs</dt><dd>A second build job and two more weeks.</dd></div>
+        </dl>
+      </article>
+    </div>
+    <aside class="note"><span class="label">Open question</span>Agents who cover two regions would load both shards. We have 14 such agents today; their sign-in download would be about 7 MB.</aside>
+  </section>
+
+  <footer class="foot">
+    <span>Yiftach Cohen, Platform team</span>
+    <a href="#how-h">How it works</a>
+    <a href="#ask-h">The decision</a>
+  </footer>
+</main>

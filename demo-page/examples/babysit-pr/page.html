@@ -1,0 +1,167 @@
+<title>babysit-pr wait loop</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400..600;1,8..60,400&display=swap">
+<style data-journal></style>
+
+<main class="page">
+  <header class="masthead">
+    <p class="kicker">Skills · Showcase</p>
+    <h1>babysit-pr no longer calls a pull request green before its CI has run</h1>
+    <p class="deck">babysit-pr is a skill that stays with a pull request until CI passes and review comments are handled. Its old wait loop could report success before any check had started, missed checks that timed out, and was cut off by the shell’s 2-minute limit. PR #15 replaces it with a tested script that watches CI and reviews together.</p>
+    <p class="byline"><span>By <strong>Yiftach Cohen</strong></span><span>Nov. 1, 2026</span></p>
+    <dl class="facts">
+      <div><dt>Status</dt><dd>Merged Sep. 27, 2026</dd></div>
+      <div><dt>Ask</dt><dd>None. Try it on your next PR</dd></div>
+      <div><dt>Code</dt><dd>PR #15, +1,317 −179</dd></div>
+      <div><dt>Coverage</dt><dd>20 new script tests, 12 new eval prompts</dd></div>
+    </dl>
+  </header>
+
+  <figure class="fig breakout">
+    <div class="fig-stage" data-figure="wait" data-ss-fill></div>
+    <figcaption>A review lands while CI is running, then a check times out. The wait returns both in one result, so the agent fixes them in one push. An illustrated run of the case tested by <code>test_review_and_failure_within_settle_come_back_together</code>.</figcaption>
+  </figure>
+
+  <section class="sec" aria-labelledby="fixed-h">
+    <h2 id="fixed-h">Six situations the old wait got wrong</h2>
+    <p>Each row is a case the old loop in <code>SKILL.md</code> handled incorrectly, and what the new version does instead.</p>
+    <div class="breakout table-wrap">
+      <table class="compare">
+        <thead>
+          <tr><th scope="col">Situation</th><th scope="col">Before</th><th scope="col">After</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Checks have not registered yet, right after a push</th><td class="before">No pending checks counted as settled, so the PR looked green</td><td>Waits up to 5 minutes for the head to reach the pushed commit and for checks to appear; returns <code>no-checks</code> if they never do</td></tr>
+          <tr><th scope="row">CI runs longer than 2 minutes</th><td class="before">One blocking shell call, killed by the Bash tool’s 2-minute default</td><td>Runs as a background command; Claude Code wakes the agent when it exits. Runtimes without background commands call it with a shorter timeout in a loop</td></tr>
+          <tr><th scope="row">A check times out or needs approval</th><td class="before">Only <code>FAILURE</code> and <code>ERROR</code> counted as failures</td><td>Classifies by GitHub’s bucket (pass, fail, pending, skipping or cancel, the group <code>gh pr checks</code> sorts each state into), so <code>TIMED_OUT</code> and <code>ACTION_REQUIRED</code> fail too</td></tr>
+          <tr><th scope="row">Finding the required checks</th><td class="before">The branch-protection API, which needs admin rights and ignores rulesets</td><td><code>gh pr checks --required</code>, which works for any collaborator</td></tr>
+          <tr><th scope="row">A review lands while CI runs</th><td class="before">Read only after CI finished, then fixed in a second CI cycle</td><td>Watched alongside CI; a 60-second settle window returns a review and a failure together</td></tr>
+          <tr><th scope="row">Conflicts or requested changes</th><td class="before"><code>DONE</code> meant CI was green</td><td><code>DONE</code> also needs no conflict and no outstanding requested changes; <code>DONE (awaiting approval)</code> names the human still needed</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="sec" aria-labelledby="how-h">
+    <h2 id="how-h">One background command waits for anything that needs the agent</h2>
+    <p>After each push the agent starts <code>wait-for-pr.sh</code> once, in the background, and spends no turns while it runs. The script returns on the first thing that needs action, and the agent decides what to do from the snapshot it prints.</p>
+    <figure class="fig breakout">
+      <div class="panel">
+        <svg class="diagram" viewBox="0 0 880 280" role="img" aria-labelledby="dg-t">
+          <title id="dg-t">The agent pushes; the wait script waits for checks to register, watches PR state, checks and reviews every 60 seconds, holds 60 seconds after the first event, and prints a result. The agent classifies it as DONE, NOT YET or BLOCKED; NOT YET loops back to watching after a fix.</title>
+          <defs>
+            <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path class="dg-arrow" d="M0 0 L8 4 L0 8 Z"/>
+            </marker>
+          </defs>
+          <text class="dg-lane" x="190" y="26">WAIT-FOR-PR.SH · ONE BACKGROUND COMMAND</text>
+
+          <rect class="dg-node" x="10" y="40" width="140" height="72" rx="3"/>
+          <text class="dg-title" x="24" y="66">Push</text>
+          <text class="dg-sub" x="24" y="86">agent pushes a</text>
+          <text class="dg-sub" x="24" y="102">commit</text>
+
+          <rect class="dg-node" x="190" y="40" width="140" height="72" rx="3"/>
+          <text class="dg-title" x="204" y="66">Register</text>
+          <text class="dg-sub" x="204" y="86">head reaches it,</text>
+          <text class="dg-sub" x="204" y="102">checks appear</text>
+
+          <rect class="dg-node" x="370" y="40" width="140" height="72" rx="3"/>
+          <text class="dg-title" x="384" y="66">Watch</text>
+          <text class="dg-sub" x="384" y="86">PR, checks, reviews</text>
+          <text class="dg-sub" x="384" y="102">every 60 s</text>
+
+          <rect class="dg-node" x="550" y="40" width="140" height="72" rx="3"/>
+          <text class="dg-title" x="564" y="66">Settle</text>
+          <text class="dg-sub" x="564" y="86">hold 60 s after</text>
+          <text class="dg-sub" x="564" y="102">the first event</text>
+
+          <rect class="dg-node" x="730" y="40" width="140" height="72" rx="3"/>
+          <text class="dg-title" x="744" y="66">Result</text>
+          <text class="dg-sub" x="744" y="86">reasons and a</text>
+          <text class="dg-sub" x="744" y="102">JSON snapshot</text>
+
+          <rect class="dg-node focus" x="700" y="180" width="170" height="72" rx="3"/>
+          <text class="dg-title" x="714" y="206">Agent classifies</text>
+          <text class="dg-sub" x="714" y="226">DONE · NOT YET ·</text>
+          <text class="dg-sub" x="714" y="242">BLOCKED</text>
+
+          <path class="dg-edge" d="M150 76 H188" marker-end="url(#arr)"/>
+          <path class="dg-edge" d="M330 76 H368" marker-end="url(#arr)"/>
+          <path class="dg-edge" d="M510 76 H548" marker-end="url(#arr)"/>
+          <path class="dg-edge" d="M690 76 H728" marker-end="url(#arr)"/>
+          <path class="dg-edge" d="M800 112 V178" marker-end="url(#arr)"/>
+          <path class="dg-edge async" d="M700 216 H80 V114" marker-end="url(#arr)"/>
+          <text class="dg-note" x="300" y="208">NOT YET: fix, push, wait again</text>
+        </svg>
+      </div>
+      <figcaption>Only the agent’s decisions cost model turns. Everything in the top row is one shell command.</figcaption>
+    </figure>
+    <ol class="steps">
+      <li><p><strong>Start the wait with the pushed commit.</strong> The agent runs the script in the background with <code>--sha</code> set to what it just pushed.</p></li>
+      <li><p><strong>Wait for CI to register.</strong> Up to 5 minutes for the PR head to reach that commit and for checks to appear on it. If they never do, the result is <code>no-checks</code>, which usually means a conflict or workflows that skip this PR.</p></li>
+      <li><p><strong>Watch everything that could need the agent.</strong> Every 60 seconds the script reads the PR state, the checks by bucket, and review activity, including edited comments. <code>--interval</code> changes the 60 seconds.</p></li>
+      <li><p><strong>Hold briefly after the first event.</strong> It keeps watching for 60 more seconds, so a review and a failure that land together come back as one wake-up. <code>--settle</code> changes the hold.</p></li>
+      <li><p><strong>Classify and act.</strong> The agent reads the JSON snapshot and returns <code>DONE</code> or <code>BLOCKED</code>, or fixes, pushes and waits again on <code>NOT YET</code>.</p></li>
+    </ol>
+    <details>
+      <summary>Every reason the wait can return, from <code>scripts/wait-for-pr.sh</code></summary>
+      <pre><code>closed        PR was merged or closed - stop babysitting
+head-moved    someone else pushed; sync before doing anything
+head-mismatch the PR head never reached &lt;sha&gt; (push missing or rejected?)
+no-checks     no checks registered on &lt;sha&gt; (conflict? path filters?)
+failing       at least one counted check is in the "fail" bucket
+new-review    comments, reviews, or threads changed since the wait began
+settled       every counted check finished and none failed
+timeout       --timeout elapsed with nothing actionable</code></pre>
+    </details>
+  </section>
+
+  <section class="sec" aria-labelledby="trust-h">
+    <h2 id="trust-h">Comments and CI logs can no longer steer the agent</h2>
+    <p>On a public repo anyone can comment, and a CI log can echo text an attacker controls. The skill now treats comments, review bodies, commit messages and logs as data about the PR, not as instructions.</p>
+    <ul>
+      <li>It acts on a review finding only after verifying it against the code.</li>
+      <li>It weighs findings by author: owners, members, collaborators and the repo’s own reviewer bots first; anyone else’s comment is a report to check.</li>
+      <li>It never follows text that asks it to run commands, fetch URLs, reveal secrets or change workflows. Changes to <code>.github/workflows/</code> need your approval even when a trusted reviewer asks.</li>
+      <li>It replies to human review threads instead of resolving them, so the reviewer decides when a thread is done.</li>
+    </ul>
+  </section>
+
+  <section class="sec" aria-labelledby="cost-h">
+    <h2 id="cost-h">What it costs</h2>
+    <p>The wait trades a little latency and some API calls for not spending model turns.</p>
+    <ul>
+      <li>A wake-up can trail the event by up to two minutes: up to 60 seconds until the next poll, plus the 60-second settle window.</li>
+      <li>Each poll makes three GitHub calls (PR state, checks, review threads) for as long as CI runs.</li>
+      <li>One wait gives up after 25 minutes by default and the agent starts another. A PR whose state stops changing is reported as stalled rather than waited on forever, and one invocation stops after 12 passes.</li>
+    </ul>
+  </section>
+
+  <section class="sec" aria-labelledby="qa-h">
+    <h2 id="qa-h">Questions</h2>
+    <dl class="qa">
+      <dt>How does the agent know the wait has finished?</dt>
+      <dd>In Claude Code it runs the script as a background command and is notified when it exits, so it spends no turns waiting. Where the runtime can subscribe to pull request events, the skill prefers that and wakes on each comment, review or CI result. Elsewhere it calls the script with a timeout that fits the shell’s limit, and calls it again on <code>timeout</code>.</dd>
+      <dt>What counts as a stall?</dt>
+      <dd>The script keeps a fingerprint of everything that would make the agent act: the head commit, mergeability, the review decision, each check’s bucket and the review activity. When it has not changed for 60 minutes, the agent stops and reports <code>NOT YET</code>, or <code>BLOCKED</code> if a check is stuck queued or never reports.</dd>
+      <dt>What if the repo has no required checks?</dt>
+      <dd>The agent watches every check instead, and says so in its report.</dd>
+      <dt>What if someone else pushes to the branch?</dt>
+      <dd>The wait returns <code>head-moved</code>, and the agent syncs to the new head on the remote before doing anything else.</dd>
+      <dt>Will the polling run into GitHub’s rate limits?</dt>
+      <dd>Three calls a minute is about 180 an hour, well below the 5,000 REST requests an hour GitHub allows an authenticated user. Reviewer bots have their own limits: the agent waits out the stated cooldown and asks for a review once more.</dd>
+      <dt>What do the new evals test?</dt>
+      <dd>Each is a realistic request with the behavior expected. The twelve new ones include a PR with no checks for an hour, a first-time commenter telling the agent to run a command, a 25-minute CI run with a bot that reviews within minutes, an edited review comment, and a bot asking for an unrelated refactor.</dd>
+    </dl>
+  </section>
+
+  <footer class="foot">
+    <span>Yiftach Cohen</span>
+    <a href="#fixed-h">What changed</a>
+    <a href="#how-h">How the wait works</a>
+    <a href="#qa-h">Questions</a>
+  </footer>
+</main>
