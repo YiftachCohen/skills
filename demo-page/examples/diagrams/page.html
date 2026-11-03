@@ -1,0 +1,227 @@
+<title>Diagram kit</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400..600;1,8..60,400&display=swap">
+<style data-journal></style>
+
+<main class="page">
+  <header class="masthead">
+    <p class="kicker">demo-page · Reference</p>
+    <h1>Pick the diagram by the question the reader is asking</h1>
+    <p class="deck">Each diagram type below answers one question, drawn in the Journal look. The content comes from babysit-pr, a real skill in this repo, except where a section says it uses the search-rollout sample.</p>
+    <dl class="facts">
+      <div><dt>Hand-drawn SVG</dt><dd>Architecture, before and after</dd></div>
+      <div><dt>Mermaid</dt><dd>Sequence, flow, state, data, schedule</dd></div>
+      <div><dt>HTML</dt><dd>Layers, timeline</dd></div>
+      <div><dt>stageshow</dt><dd>Anything that has to move</dd></div>
+    </dl>
+  </header>
+
+  <section class="sec" aria-labelledby="change-h">
+    <h2 id="change-h">What changes? Before and after, in the same layout</h2>
+    <p>Hand-drawn, because position carries the meaning: every node keeps its place, so the eye sees only what moved. The search-rollout sample: search used to cross the network on every keystroke, and now stops in the browser.</p>
+    <figure class="fig breakout">
+      <div class="panel">
+        <svg class="diagram" viewBox="0 0 880 300" role="img" aria-labelledby="ba-t">
+          <title id="ba-t">Before: every keystroke goes from the browser through the API to a Postgres scan. After: the same three nodes, but updates flow from Postgres to the browser, and keystrokes stop in the browser.</title>
+          <defs>
+            <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="dg-arrow" d="M0 0 L8 4 L0 8 Z"/></marker>
+          </defs>
+          <text class="dg-lane" x="20" y="26">BEFORE</text>
+          <rect class="dg-node" x="20" y="40" width="180" height="64" rx="3"/>
+          <text class="dg-title" x="34" y="66">Agent’s browser</text>
+          <text class="dg-sub" x="34" y="86">sends every keystroke</text>
+          <rect class="dg-node" x="350" y="40" width="180" height="64" rx="3"/>
+          <text class="dg-title" x="364" y="66">Admin API</text>
+          <text class="dg-sub" x="364" y="86">search endpoint</text>
+          <rect class="dg-node focus" x="680" y="40" width="180" height="64" rx="3"/>
+          <text class="dg-title" x="694" y="66">Postgres</text>
+          <text class="dg-sub" x="694" y="86">ILIKE over 4.1M rows</text>
+          <path class="dg-edge" d="M200 72 H348" marker-end="url(#arr)"/>
+          <path class="dg-edge" d="M530 72 H678" marker-end="url(#arr)"/>
+          <text class="dg-note" x="560" y="128">p95 2,400 ms</text>
+
+          <text class="dg-lane" x="20" y="186">AFTER</text>
+          <rect class="dg-node focus" x="20" y="200" width="180" height="64" rx="3"/>
+          <text class="dg-title" x="34" y="226">Agent’s browser</text>
+          <text class="dg-sub" x="34" y="246">searches a local index</text>
+          <rect class="dg-node" x="350" y="200" width="180" height="64" rx="3"/>
+          <text class="dg-title" x="364" y="226">Admin API</text>
+          <text class="dg-sub" x="364" y="246">streams updates</text>
+          <rect class="dg-node" x="680" y="200" width="180" height="64" rx="3"/>
+          <text class="dg-title" x="694" y="226">Postgres</text>
+          <text class="dg-sub" x="694" y="246">change feed</text>
+          <path class="dg-edge async" d="M678 232 H532" marker-end="url(#arr)"/>
+          <path class="dg-edge async" d="M348 232 H202" marker-end="url(#arr)"/>
+          <text class="dg-note" x="20" y="288">p95 38 ms, keystrokes stop here</text>
+        </svg>
+      </div>
+      <figcaption>The slow node moves from Postgres to nowhere: in the after row, nothing waits on the database.</figcaption>
+    </figure>
+    <p>For a single system without a before state, see the architecture diagram in the search-rollout example.</p>
+  </section>
+
+  <section class="sec" aria-labelledby="seq-h">
+    <h2 id="seq-h">In what order do things talk? A sequence diagram</h2>
+    <p>Mermaid, because a sequence is a list of messages and auto layout gets it right. Use it for request paths, handshakes and retries: anything where the order of calls is the point.</p>
+    <figure class="fig breakout">
+      <div class="panel">
+        <pre data-mermaid>
+sequenceDiagram
+  participant A as Agent
+  participant W as wait-for-pr.sh
+  participant G as GitHub
+  A->>G: git push 049e282
+  A->>W: start in background, --sha 049e282
+  loop until checks register, up to 5 min
+    W->>G: PR head and checks
+  end
+  loop every 60 s
+    W->>G: PR state, checks, review threads
+  end
+  G-->>W: new review from Dana
+  Note over W: hold 60 s for anything else
+  G-->>W: test (3.12) timed out
+  W-->>A: WAIT_RESULT failing,new-review + JSON
+        </pre>
+      </div>
+      <figcaption>One wait returns the review and the failure together, after a 60-second settle window.</figcaption>
+    </figure>
+  </section>
+
+  <section class="sec" aria-labelledby="flow-h">
+    <h2 id="flow-h">What happens next, and where does it branch? A flowchart</h2>
+    <p>Mermaid for branching logic with more than a handful of paths. Mark the path the story is about <code>:::focus</code>. When a flow is the page’s main picture and fits in one row, draw it by hand instead.</p>
+    <figure class="fig breakout">
+      <div class="panel">
+        <pre data-mermaid>
+flowchart LR
+  C[Check on the PR head] --> B{Bucket}
+  B -->|pass| P[Done]
+  B -->|pending| W[Keep waiting]
+  B -->|fail| R{Required?}
+  R -->|yes| F[Root-cause and fix]:::focus
+  R -->|no| N[Report it, don't block DONE]
+  B -->|cancel| S{Newer run?}
+  S -->|yes| I[Ignore, superseded]
+  S -->|no| Q[Rerun candidate]
+        </pre>
+      </div>
+      <figcaption>How babysit-pr classifies each check. Only a failing required check costs a fix.</figcaption>
+    </figure>
+  </section>
+
+  <section class="sec" aria-labelledby="state-h">
+    <h2 id="state-h">What states can it be in? A state diagram</h2>
+    <p>Mermaid. Use it for lifecycles: an order, a job, a deploy, a PR. Name each transition by what causes it.</p>
+    <figure class="fig breakout">
+      <div class="panel">
+        <pre data-mermaid>
+stateDiagram-v2
+  direction LR
+  state "NOT YET" as NotYet
+  state "DONE (awaiting approval)" as Awaiting
+  [*] --> Pass
+  Pass --> NotYet: work still in flight
+  NotYet --> Pass: wait returns
+  Pass --> DONE: green, no conflict, no requested changes
+  Pass --> Awaiting: only a human approval left
+  Pass --> BLOCKED: same check failed twice, or a decision is needed
+  DONE --> [*]
+  Awaiting --> [*]
+  BLOCKED --> [*]
+        </pre>
+      </div>
+      <figcaption>Every pass of babysit-pr ends in one of four verdicts. Only <code>NOT YET</code> loops.</figcaption>
+    </figure>
+  </section>
+
+  <section class="sec" aria-labelledby="data-h">
+    <h2 id="data-h">What does the data look like? An entity diagram</h2>
+    <p>Mermaid. Use it when a change adds or reshapes tables. Show only the entities the change touches, with the fields that matter to it. This one uses the search-rollout sample.</p>
+    <figure class="fig breakout">
+      <div class="panel">
+        <pre data-mermaid>
+erDiagram
+  TENANT ||--o{ ACCOUNT : has
+  TENANT ||--o{ INDEX_SNAPSHOT : "built every 15 min"
+  ACCOUNT ||--o{ ACCOUNT_EVENT : emits
+  TENANT {
+    uuid id
+    string region
+  }
+  ACCOUNT {
+    uuid id
+    uuid tenant_id
+    string name
+    bool hidden
+  }
+  INDEX_SNAPSHOT {
+    uuid tenant_id
+    int size_bytes
+    timestamp built_at
+  }
+  ACCOUNT_EVENT {
+    uuid account_id
+    string kind
+    timestamp at
+  }
+        </pre>
+      </div>
+      <figcaption>Snapshots are per tenant; events carry edits, deletions and visibility changes to the browser.</figcaption>
+    </figure>
+  </section>
+
+  <section class="sec" aria-labelledby="when-h">
+    <h2 id="when-h">What happened when? A timeline</h2>
+    <p>HTML, for a dated sequence the reader scans: a rollout, an incident, a project’s history. Mark the current step <code>data-state="now"</code>.</p>
+    <ol class="timeline">
+      <li data-state="done"><time>Jun. 17, 2026</time><p><strong>babysit-pr published</strong>One pass per run: check CI, verify review comments, push once, report. Repeating it was left to a scheduler.</p></li>
+      <li data-state="done"><time>Jun. 20, 2026</time><p><strong>Looping by default</strong>Passes run back to back inside one invocation, sleeping while CI runs.</p></li>
+      <li data-state="done"><time>Jun. 27, 2026</time><p><strong>Workflow fixes from real use</strong>Changes drawn from how the skill was used in practice.</p></li>
+      <li data-state="now"><time>Sep. 27, 2026</time><p><strong>PR #15: a tested wait script</strong>CI and reviews watched together, in the background, with a stricter DONE.</p></li>
+    </ol>
+    <p>For parallel workstreams with durations, use a Mermaid <code>gantt</code> instead. This plan is from the search-rollout sample:</p>
+    <figure class="fig breakout">
+      <div class="panel">
+        <pre data-mermaid>
+gantt
+  dateFormat YYYY-MM-DD
+  axisFormat %b %d
+  section Small tenants
+  Switch on 203         :s1, 2026-11-17, 2d
+  section Region shards
+  Build job per region  :active, r1, 2026-11-17, 8d
+  Load own region first :r2, after r1, 5d
+  Switch on 9 large     :crit, r3, after r2, 2d
+        </pre>
+      </div>
+      <figcaption>Option B: the small tenants ship first, and the shards follow two weeks later.</figcaption>
+    </figure>
+  </section>
+
+  <section class="sec" aria-labelledby="layers-h">
+    <h2 id="layers-h">How is it layered? A layer stack</h2>
+    <p>HTML, for systems that read top to bottom: who calls whom, from the user down. Mark the layer the story is about <code>.focus</code>.</p>
+    <ol class="layers">
+      <li><strong>SKILL.md</strong><span>Decides: classifies checks, verifies review findings, returns DONE, NOT YET or BLOCKED</span></li>
+      <li class="focus"><strong>Scripts</strong><span><code>wait-for-pr.sh</code> waits on CI and reviews; <code>failed-log.sh</code> pulls the failing step’s log</span></li>
+      <li><strong>gh CLI</strong><span><code>pr view</code>, <code>pr checks</code>, <code>api graphql</code>, <code>run rerun</code></span></li>
+      <li><strong>GitHub</strong><span>REST, GraphQL and Actions logs</span></li>
+    </ol>
+  </section>
+
+  <section class="sec" aria-labelledby="move-h">
+    <h2 id="move-h">What does it look like while it runs? A stageshow figure</h2>
+    <p>When the point is a sequence of moments on a screen (a check turning red, a review landing, a result printing), animate it with stageshow instead of drawing arrows. The babysit-pr page opens with one. For charts of numbers, follow the <code>dataviz</code> skill with the Journal tokens.</p>
+  </section>
+
+  <footer class="foot">
+    <span>demo-page skill</span>
+    <a href="#change-h">Before and after</a>
+    <a href="#seq-h">Sequence</a>
+    <a href="#state-h">State</a>
+    <a href="#when-h">Timeline</a>
+  </footer>
+</main>

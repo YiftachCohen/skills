@@ -11,3 +11,6 @@ plans/
 .gstack/
 atlas-workspace/
 design-prompt-workspace/
+
+# demo-page build output
+demo-page/examples/*/dist/

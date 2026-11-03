@@ -1,0 +1,68 @@
+{
+  "skill_name": "demo-page",
+  "evals": [
+    {
+      "id": 0,
+      "name": "showcase-with-figure",
+      "prompt": "I shipped bulk export in our admin panel: you select rows in the users table, hit Export, and get a CSV in a toast with a download link. Exports used to be a support ticket and took a day; now 300 per week, median 4 seconds. Make me a demo page to show the team, with an animation of the flow.",
+      "expected_output": "A single built HTML page in the Journal look with a stageshow figure of selecting rows and exporting, a metrics table, and the page order from the example.",
+      "files": [],
+      "assertions": [
+        "The page head keeps the fonts link and <style data-journal></style>, and the built file inlines journal.css",
+        "A figures/<name>.tsx exists, default-exports a component, and spreads JOURNAL on its Stage",
+        "The figure sits in figure.fig.breakout with a figcaption that says what to notice",
+        "The numbers are in table.metrics or .stats, not invented beyond what the user gave",
+        "No new colors or font families are introduced outside the journal tokens",
+        "No sentence from the search-rollout example remains",
+        "The headline states the claim as a finding (with its number when there is one), and the first screen also carries the ask or says there is none",
+        "Section headings state findings, not topics",
+        "Every number on the page traces to the prompt, the repo, or a question asked to the user; none are invented",
+        "A fresh subagent ran the comprehension check on dist/page.txt and the first-screen image, not by browsing the page",
+        "The handover message lists facts that came from inference for the user to confirm",
+        "The page states a cost or limit of the feature, not only wins",
+        "The agent never opened a built dist/*.html file"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "architecture-proposal",
+      "prompt": "Write up a proposal page: we want to move our job queue from Postgres SKIP LOCKED polling to Redis Streams. Workers poll every 500ms today and hold connections; at peak we hit the connection limit. Options: Redis Streams (new infra), or pgbouncer plus LISTEN/NOTIFY (no new infra, but NOTIFY payload limits). I lean Redis. Need a decision from the team by next Friday.",
+      "expected_output": "A Journal page with an inline SVG architecture diagram in a .panel, both options in .options with Redis marked data-recommended, and the deadline in the masthead facts. No stageshow figure is needed.",
+      "files": [],
+      "assertions": [
+        "The architecture is an inline SVG in .panel using dg-* classes, with the focal node marked .focus",
+        "Both options appear as .option, and the Redis option carries data-recommended",
+        "The decision deadline appears in .facts",
+        "No stageshow figure is built for a page with no product moment",
+        "The build produced dist/page.html and dist/page.preview.html",
+        "The headline states the claim as a finding (with its number when there is one), and the first screen also carries the ask or says there is none",
+        "Section headings state findings, not topics",
+        "Every number on the page traces to the prompt, the repo, or a question asked to the user; none are invented",
+        "A fresh subagent ran the comprehension check on dist/page.txt and the first-screen image, not by browsing the page",
+        "The handover message lists facts that came from inference for the user to confirm",
+        "Each option gets its strongest honest case, including the one not recommended",
+        "The agent never opened a built dist/*.html file"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "metrics-report",
+      "prompt": "Make a page with our Q3 reliability numbers for the eng all-hands: uptime 99.95% (was 99.81%), 4 SEV1s (was 11), MTTR 38 min (was 2h10), on-call pages per week 23 (was 61). One regression: deploy frequency dropped from 41 to 33 per week because of the new review gate.",
+      "expected_output": "A Journal page where the numbers are the point: .stats for the headline figures, a metrics table with .good on wins and .bad on the deploy-frequency regression, and a .note explaining the regression.",
+      "files": [],
+      "assertions": [
+        "Headline numbers use .stats or table.metrics, with tabular figures",
+        "The deploy-frequency regression is marked .bad and is explained in prose or a .note, not hidden",
+        "Status colors appear only on status; the clay accent is not used to mark wins",
+        "The page is checked at 1280 and 390 wide before handover",
+        "The headline states the claim as a finding (with its number when there is one), and the first screen also carries the ask or says there is none",
+        "Section headings state findings, not topics",
+        "Every number on the page traces to the prompt, the repo, or a question asked to the user; none are invented",
+        "A fresh subagent ran the comprehension check on dist/page.txt and the first-screen image, not by browsing the page",
+        "The handover message lists facts that came from inference for the user to confirm",
+        "Each large move in the numbers has a stated cause or is marked unexplained",
+        "The agent never opened a built dist/*.html file"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,300 @@
+/* Journal: the house look for demo pages.
+   Warm paper, a quiet sans headline over serif text, one clay accent.
+   One reading column; figures, diagrams and wide tables break out of it
+   onto soft tinted panels. Light only: the page paints its own ground.
+
+   Fonts (Google): Hanken Grotesk 400-600, Source Serif 4 (opsz 8-60, 400-600, italic 400),
+   JetBrains Mono 400-500. template.html links them. */
+
+:root {
+  /* Color */
+  --ground: #faf9f5;        /* the page */
+  --panel: #f0eee6;         /* figures, diagrams, options */
+  --ink: #1a1915;           /* text */
+  --ink-2: #6b6760;         /* captions, labels, before-values */
+  --rule: #e4e0d6;          /* hairlines */
+  --line: #c9c3b6;          /* diagram node outlines */
+  --accent: #b0532c;        /* clay: links, the focal node, step numbers, the recommendation */
+  --good: #2f6b45;          /* status only: a win in a table, a passing check */
+  --bad: #a3392a;           /* status only: a regression, a failure */
+
+  /* Type */
+  --font-display: "Hanken Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Source Serif 4", "Iowan Old Style", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Layout */
+  --column: 660px;
+  --wide: 920px;
+
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--ground); }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 19px;
+  line-height: 1.65;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3 { margin: 0; font-family: var(--font-display); font-weight: 500; text-wrap: balance; }
+p, ol, ul, dl, dd, figure, blockquote, pre { margin: 0; }
+ol, ul { padding: 0; }
+table { border-collapse: collapse; width: 100%; }
+code { font-family: var(--font-mono); font-size: 0.82em; }
+a { color: var(--accent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+strong { font-weight: 600; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* ── Skeleton ─────────────────────────────────────────────── */
+.page {
+  display: grid;
+  gap: 72px;
+  max-width: var(--column);
+  margin: 0 auto;
+  padding-block: 72px 96px;
+}
+/* Wider than the column, centered on it, never wider than the screen */
+.breakout {
+  width: min(var(--wide), calc(100vw - 32px));
+  margin-left: calc((100% - min(var(--wide), calc(100vw - 32px))) / 2);
+}
+.label { font-family: var(--font-display); font-size: 13px; font-weight: 500; line-height: 1.4; color: var(--ink-2); }
+
+/* ── Masthead ─────────────────────────────────────────────── */
+.masthead { display: grid; gap: 22px; }
+.kicker { font-family: var(--font-display); font-size: 15px; font-weight: 500; color: var(--ink-2); }
+.masthead h1 { font-size: clamp(38px, 6vw, 58px); line-height: 1.08; letter-spacing: -0.025em; }
+.deck { font-size: 21px; line-height: 1.5; color: var(--ink-2); }
+.byline { display: flex; flex-wrap: wrap; gap: 4px 14px; font-family: var(--font-display); font-size: 13px; color: var(--ink-2); }
+.byline strong { color: var(--ink); }
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px 32px;
+  font-family: var(--font-display);
+}
+.facts div { display: grid; gap: 2px; align-content: start; }
+.facts dt { font-size: 13px; font-weight: 500; color: var(--ink-2); }
+.facts dd { font-size: 15px; line-height: 1.4; }
+
+/* ── Figures ──────────────────────────────────────────────── */
+.fig { display: grid; gap: 14px; }
+.fig-stage { width: 100%; }                 /* a stageshow figure mounts here */
+.fig img, .fig video { display: block; width: 100%; height: auto; border-radius: 16px; background: var(--panel); }
+.panel { padding: 32px; background: var(--panel); border-radius: 16px; overflow-x: auto; }
+figcaption, .caption {
+  width: 100%;
+  max-width: var(--column);
+  margin-inline: auto;
+  font-family: var(--font-display);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.credit { opacity: 0.8; }
+
+/* ── Sections ─────────────────────────────────────────────── */
+.sec { display: grid; gap: 20px; }
+.sec h2 { font-size: 30px; line-height: 1.2; letter-spacing: -0.02em; }
+.sec h3 { font-size: 21px; line-height: 1.3; letter-spacing: -0.01em; }
+.sec > p { max-width: 66ch; }
+.sec ul:not([class]) { padding-left: 1.1em; display: grid; gap: 6px; }
+
+/* Big numbers: only when the figures are the point of the page */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 24px 32px; }
+.stat { display: grid; gap: 4px; align-content: start; font-family: var(--font-display); }
+.stat-value { font-size: 40px; font-weight: 500; line-height: 1.05; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.stat-label { font-size: 14px; line-height: 1.4; color: var(--ink-2); }
+
+/* Before / after table */
+.table-wrap { overflow-x: auto; }
+.metrics { font-family: var(--font-display); font-size: 15px; }
+.metrics th, .metrics td { text-align: left; padding: 11px 16px 11px 0; vertical-align: baseline; border-bottom: 1px solid var(--rule); }
+.metrics th:last-child, .metrics td:last-child { padding-right: 0; }
+.metrics thead th { font-size: 13px; font-weight: 500; color: var(--ink-2); }
+.metrics td:not(:first-child), .metrics th:not(:first-child) { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.metrics .before { color: var(--ink-2); }
+.metrics .after { font-weight: 600; }
+.metrics .good { color: var(--good); }
+.metrics .bad { color: var(--bad); }
+
+/* Before and after in words: behavior that changed, one situation per row */
+.compare { font-family: var(--font-display); font-size: 15px; line-height: 1.45; min-width: 560px; }
+.compare th, .compare td { text-align: left; vertical-align: top; padding: 12px 20px 12px 0; border-bottom: 1px solid var(--rule); }
+.compare th:last-child, .compare td:last-child { padding-right: 0; }
+.compare thead th { font-size: 13px; font-weight: 500; color: var(--ink-2); }
+.compare tbody th { width: 28%; font-weight: 600; }
+.compare .before { color: var(--ink-2); }
+
+/* Ordered steps: only for a real sequence */
+.steps { display: grid; list-style: none; counter-reset: step; }
+.steps li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  padding-block: 8px;
+}
+.steps li::before {
+  content: counter(step);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent);
+  padding-top: 3px;
+}
+
+/* A decision between options; mark one data-recommended */
+.options { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+.option {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 24px;
+  background: var(--panel);
+  border: 1.5px solid transparent;
+  border-radius: 14px;
+  font-family: var(--font-display);
+}
+.option[data-recommended] { background: var(--ground); border-color: var(--accent); }
+.option-head { display: grid; gap: 2px; }
+.option h3 { font-size: 22px; line-height: 1.25; letter-spacing: -0.015em; }
+.tag { font-size: 13px; font-weight: 500; color: var(--ink-2); }
+.option[data-recommended] .tag { color: var(--accent); }
+.option dl { display: grid; gap: 8px; }
+.option dl div { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 12px; }
+.option dt { font-size: 13px; font-weight: 500; color: var(--ink-2); padding-top: 2px; }
+.option dd { font-size: 15px; line-height: 1.5; }
+
+/* An aside the reader must not miss: a risk, a caveat, an open question */
+.note {
+  padding: 20px 24px;
+  background: var(--panel);
+  border-radius: 12px;
+  font-size: 17px;
+}
+.note .label { display: block; margin-bottom: 4px; color: var(--accent); }
+
+/* Depth that would interrupt the read: a query, a config, raw data */
+details { background: var(--panel); border-radius: 12px; font-size: 17px; }
+summary {
+  padding: 14px 24px;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 500;
+}
+summary::marker { color: var(--accent); }
+details > :not(summary) { margin: 0 24px 20px; }
+details pre { padding: 0; background: none; border-radius: 0; }
+
+pre {
+  padding: 20px 24px;
+  background: var(--panel);
+  border-radius: 12px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.6;
+}
+pre code { font-size: inherit; }
+
+/* Questions readers are likely to ask, answered; the page's last section */
+.qa { display: grid; }
+.qa dt {
+  padding-top: 18px;
+  border-top: 1px solid var(--rule);
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.qa dd { padding: 6px 0 18px; }
+
+/* ── Diagrams (inline SVG) ────────────────────────────────── */
+.diagram { display: block; width: 100%; min-width: 640px; height: auto; }
+.dg-node { fill: var(--ground); stroke: var(--line); stroke-width: 1; }
+.dg-node.focus { stroke: var(--accent); stroke-width: 1.75; }
+.dg-title { fill: var(--ink); font-family: var(--font-display); font-size: 14px; font-weight: 500; }
+.dg-sub { fill: var(--ink-2); font-family: var(--font-display); font-size: 12px; }
+.dg-lane { fill: var(--ink-2); font-family: var(--font-display); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; }
+.dg-edge { fill: none; stroke: var(--ink-2); stroke-width: 1.25; }
+.dg-edge.async { stroke-dasharray: 4 4; }
+.dg-arrow { fill: var(--ink-2); }
+.dg-note { fill: var(--accent); font-family: var(--font-display); font-size: 12px; font-weight: 600; }
+
+/* Mermaid, rendered to SVG by the build; sits in a .panel like a hand-drawn diagram */
+.mermaid-svg { display: flex; justify-content: center; min-width: min(100%, 560px); }
+.mermaid-svg svg { max-width: 100%; height: auto; }
+
+/* A layer stack: the top layer is closest to the user; mark the one the story is about .focus */
+.layers { display: grid; gap: 6px; list-style: none; font-family: var(--font-display); }
+.layers li {
+  display: grid;
+  grid-template-columns: minmax(120px, 30%) minmax(0, 1fr);
+  gap: 4px 20px;
+  padding: 14px 18px;
+  background: var(--ground);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.layers li.focus { border: 1.75px solid var(--accent); padding: 13.25px 17.25px; }
+.layers strong { font-size: 15px; }
+.layers span { font-size: 14px; line-height: 1.45; color: var(--ink-2); }
+
+/* A dated sequence: rollout plans, incident timelines. data-state: done, now, next */
+.timeline { display: grid; list-style: none; font-family: var(--font-display); }
+.timeline li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 20px;
+  padding-bottom: 18px;
+}
+.timeline li::before {
+  content: "";
+  position: absolute;
+  left: 113px;
+  top: 6px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink-2);
+  background: var(--panel);
+}
+.timeline li::after {
+  content: "";
+  position: absolute;
+  left: 117.5px;
+  top: 19px;
+  bottom: 0;
+  width: 1px;
+  background: var(--line);
+}
+.timeline li:last-child::after { display: none; }
+.timeline li[data-state="done"]::before { background: var(--ink-2); }
+.timeline li[data-state="now"]::before { background: var(--accent); border-color: var(--accent); }
+.timeline time { font-size: 13px; font-weight: 500; color: var(--ink-2); padding-top: 1px; }
+.timeline p { padding-left: 20px; font-size: 15px; line-height: 1.5; }
+.timeline strong { display: block; }
+
+/* ── Footer ───────────────────────────────────────────────── */
+.foot { display: flex; flex-wrap: wrap; gap: 6px 24px; font-family: var(--font-display); font-size: 13px; color: var(--ink-2); }
+
+@media (max-width: 640px) {
+  body { font-size: 17px; }
+  .page { gap: 52px; padding-block: 40px 72px; }
+  .panel { padding: 16px; border-radius: 12px; }
+  .metrics th, .metrics td { padding-right: 10px; }
+}
+
+/* stageshow figures sit on the panel color, with the panel's corners */
+[data-figure] .ss-stage { background: var(--ss-well); border-radius: 16px; overflow: hidden; }
+@media (max-width: 640px) { [data-figure] .ss-stage { border-radius: 12px; } }

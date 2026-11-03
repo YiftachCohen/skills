@@ -1,0 +1,114 @@
+.sd {
+  & .ss-stage {
+    --gutter: 32px;
+  }
+
+  /* Corner bleed: the window starts where the satellite's middle is, so the
+     satellite straddles its edge half outside, over the sidebar */
+  .sd-window {
+    position: absolute;
+    top: var(--gutter);
+    left: 130px;
+    width: 760px;
+    height: 400px;
+    box-shadow: var(--ss-shadow-hero);
+  }
+
+  .sd-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    height: 100%;
+    padding: 14px 16px 0;
+    background: var(--ss-surface);
+  }
+
+  .sd-field { width: 376px; }
+  .sd-field .ss-field__box { padding-left: 14px; gap: 10px; }
+  .sd-field .ss-field__box { color: var(--ss-text-strong); }
+  .sd-field .ss-field__box > svg { color: var(--ss-icon-faint); flex: none; }
+
+  .sd-trail { display: flex; align-items: center; gap: 8px; flex: none; }
+
+  .sd-ms {
+    font-size: 11px;
+    line-height: 14px;
+    color: var(--ss-text-faint);
+    font-variant-numeric: tabular-nums;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+  }
+  .sd-ms[data-show] { opacity: 1; }
+
+  .sd-clear {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    flex: none;
+    border-radius: 999px;
+    background: var(--ss-ink-1);
+    color: var(--ss-icon-faint);
+    opacity: 0;
+    transition: opacity 0.2s ease, background 0.2s ease;
+  }
+  .sd-clear[data-show] { opacity: 1; }
+  .sd-clear[data-hover] { background: var(--ss-ink-2); }
+
+  /* The fill insets live on the list, so a row's words line up with the field */
+  .sd-list { margin-inline: -10px; }
+  .sd-list .ss-row__title { font-size: 12.5px; font-weight: 500; color: var(--ss-text); }
+  .sd-ch { transition: color 0.18s ease; }
+  .sd-ch[data-hit] { color: var(--ss-accent-text); }
+
+  .sd-side { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; }
+  .sd-side-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 26px;
+    padding-inline: 8px;
+    border-radius: var(--ss-radius-sm);
+  }
+
+
+  /* The satellite: the devtools fact that carries the point */
+  .sd-net {
+    position: absolute;
+    left: var(--gutter);
+    bottom: var(--gutter);
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    width: 196px;
+    padding: 10px 12px;
+    gap: 8px;
+    border-radius: var(--ss-radius-lg);
+    background: var(--ss-raised);
+    box-shadow: var(--ss-shadow-satellite);
+    will-change: transform;
+    font-size: 11px;
+    line-height: 14px;
+    color: var(--ss-text);
+  }
+  .sd-net-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 600; color: var(--ss-text-strong); }
+  .sd-net-filter { font-weight: 400; color: var(--ss-text-faint); }
+  .sd-net-row { display: flex; justify-content: space-between; gap: 8px; }
+  .sd-net-name { font-family: var(--ss-mono); font-size: 10.5px; }
+  .sd-net-size { color: var(--ss-text-faint); font-variant-numeric: tabular-nums; }
+  .sd-net-foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--ss-line-faint);
+  }
+  .sd-net-zero { font-weight: 600; color: var(--ss-text-strong); font-variant-numeric: tabular-nums; }
+
+  .sd-rest { position: absolute; left: 600px; top: 300px; width: 1px; height: 1px; }
+
+  & .ss-stage[data-layout='compact'] { --gutter: 16px; }
+  & .ss-stage[data-layout='compact'] .sd-window { left: var(--gutter); top: var(--gutter); width: 420px; height: 360px; }
+  & .ss-stage[data-layout='compact'] .sd-field { width: 296px; }
+  & .ss-stage[data-layout='compact'] .sd-rest { left: 300px; top: 280px; }
+}
